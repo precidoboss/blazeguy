@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>blazeguy — Streamer Dashboard</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#080B10;--surface:#0E1118;--card:#131720;--border:#1E2433;--border2:#252D3D;
+  --blaze:#F0B90B;--blaze2:#FFD234;--blazedim:rgba(240,185,11,0.12);
+  --text:#E8EAF0;--muted:#5A6380;--muted2:#8892AA;
+  --green:#22D47A;--greendim:rgba(34,212,122,0.1);
+  --red:#F05050;--reddim:rgba(240,80,80,0.1);
+  --blue:#4C8EF5;--purple:#9B6CF5;--purpledim:rgba(155,108,245,0.1);
+  --gold:#F0B90B;--silver:#9BACC8;--bronze:#C87941;
+}
+html,body{height:100%;font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--text);font-size:14px;overflow:hidden;}
+#hero-view{height:calc(100vh - 56px);overflow-y:auto;}
+#dash-view{height:calc(100vh - 56px);overflow:hidden;display:flex;flex-direction:column;}
+.dash{display:grid;grid-template-columns:260px 1fr 300px;height:100%;overflow:hidden;}
+.dash-sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;height:100%;}
+.dash-main{display:flex;flex-direction:column;overflow:hidden;min-height:0;height:100%;}
+.dash-right{background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;height:100%;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* ── TOPBAR ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:50;}
+.logo{font-size:18px;font-weight:700;color:var(--blaze);display:flex;align-items:center;gap:8px;}
+.logo-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.5);}}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.user-pill{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border2);border-radius:20px;padding:4px 12px 4px 4px;}
+.user-pill img{width:26px;height:26px;border-radius:50%;object-fit:cover;}
+.user-pill .uname{font-size:13px;font-weight:600;}
+.conn-pill{font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600;}
+.conn-pill.on{background:var(--greendim);color:var(--green);border:1px solid rgba(34,212,122,.2);}
+.conn-pill.off{background:var(--reddim);color:var(--red);border:1px solid rgba(240,80,80,.2);}
+
+/* ── HERO ── */
+.hero{max-width:720px;margin:80px auto;padding:0 24px;text-align:center;}
+.hero h1{font-size:42px;font-weight:700;line-height:1.15;margin-bottom:16px;}
+.hero h1 span{color:var(--blaze);}
+.hero p{font-size:16px;color:var(--muted2);line-height:1.7;margin-bottom:32px;}
+.hero-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:40px;}
+.step{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 16px;text-align:left;}
+.step-num{font-size:11px;font-weight:700;color:var(--blaze);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+.step h3{font-size:15px;font-weight:700;margin-bottom:6px;}
+.step p{font-size:12px;color:var(--muted2);line-height:1.5;}
+.hero-cta{background:var(--blaze);color:#000;border:none;padding:16px 32px;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;}
+.hero-cta:hover{background:var(--blaze2);}
+
+/* SIDEBAR */
+.sb-section{padding:16px;border-bottom:1px solid var(--border);}
+.sb-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;}
+.stat-card .sv{font-size:20px;font-weight:700;}
+.stat-card .sl{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+.stat-card.blaze .sv{color:var(--blaze);}
+.stat-card.green .sv{color:var(--green);}
+.cmd-list{display:flex;flex-direction:column;gap:5px;}
+.cmd-item{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:7px 10px;font-size:12px;}
+.cmd-item code{color:var(--blaze);font-family:'JetBrains Mono',monospace;font-size:10px;}
+.cmd-item .cd{color:var(--muted2);font-size:10px;margin-top:1px;}
+.leave-btn{width:100%;background:var(--reddim);border:1px solid rgba(240,80,80,.2);color:var(--red);padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;}
+.leave-btn:hover{background:rgba(240,80,80,.25);}
+
+/* MAIN */
+.main-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border);}
+.tab{padding:12px 18px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--blaze);border-bottom-color:var(--blaze);}
+.main-body{flex:1;overflow-y:auto;padding:20px;}
+
+/* LEADERBOARD */
+.lb-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;}
+.lb-title{font-size:18px;font-weight:700;}
+.lb-sub{font-size:12px;color:var(--muted2);margin-top:2px;}
+.lb-list{display:flex;flex-direction:column;gap:8px;}
+.lb-item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;}
+.lb-item.r1{border-color:rgba(240,185,11,.35);background:linear-gradient(90deg,rgba(240,185,11,.06),transparent);}
+.lb-item.r2{border-color:rgba(155,172,200,.2);}
+.lb-item.r3{border-color:rgba(200,121,65,.2);}
+.rank-n{font-size:13px;font-weight:700;width:22px;text-align:center;flex-shrink:0;}
+.r1 .rank-n{color:var(--gold);} .r2 .rank-n{color:var(--silver);} .r3 .rank-n{color:var(--bronze);}
+.lb-av{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--border2);flex-shrink:0;}
+.lb-info{flex:1;min-width:0;}
+.lb-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-badges{display:flex;gap:3px;margin-top:3px;flex-wrap:wrap;}
+.bdg{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;text-transform:uppercase;}
+.bdg-sub{background:var(--purpledim);color:var(--purple);border:1px solid rgba(155,108,245,.2);}
+.bdg-fol{background:rgba(76,142,245,.1);color:var(--blue);border:1px solid rgba(76,142,245,.2);}
+.bdg-gift{background:var(--greendim);color:var(--green);border:1px solid rgba(34,212,122,.2);}
+.bar-wrap{height:3px;background:var(--border);border-radius:2px;margin-top:5px;}
+.bar{height:100%;background:linear-gradient(90deg,var(--blaze),var(--blaze2));border-radius:2px;transition:width .5s;}
+.lb-score{text-align:right;flex-shrink:0;}
+.score-v{font-size:17px;font-weight:700;color:var(--blaze);font-family:'JetBrains Mono',monospace;}
+.score-l{font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;}
+
+/* ALERTS */
+.alert-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;gap:10px;animation:slidein .3s ease;margin-bottom:8px;}
+@keyframes slidein{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
+.alert-icon{font-size:15px;flex-shrink:0;margin-top:1px;}
+.alert-msg{font-size:12px;line-height:1.5;color:var(--muted2);}
+.alert-msg b{color:var(--text);}
+.alert-time{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px;}
+.alert-item.follow{border-left:3px solid var(--blue);}
+.alert-item.sub{border-left:3px solid var(--purple);}
+.alert-item.gift{border-left:3px solid var(--green);}
+.alert-item.milestone{border-left:3px solid var(--gold);background:var(--blazedim);}
+.alert-item.stream{border-left:3px solid var(--green);}
+.alert-item.mod{border-left:3px solid var(--red);}
+
+/* SHOP & SETTINGS TABS */
+.form-row{display:flex;gap:8px;margin-bottom:12px;align-items:flex-end;}
+.field{flex:1;}
+.field label{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.field input,.field select{width:100%;background:var(--card);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:8px;font-size:13px;font-family:inherit;}
+.field input:focus,.field select:focus{outline:1px solid var(--blaze);}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;}
+.toggle-row .tl{font-size:13px;font-weight:600;}
+.toggle-row .td{font-size:11px;color:var(--muted2);margin-top:2px;}
+.toggle{width:42px;height:24px;background:var(--border2);border-radius:12px;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0;}
+.toggle.on{background:var(--blaze);}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s;}
+.toggle.on::after{left:21px;}
+
+/* RIGHT PANEL - CHAT */
+.rp-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;justify-content:space-between;}
+.chat-feed{flex:1;overflow-y:auto;padding:10px;}
+.chat-msg{padding:5px 8px;border-radius:8px;margin-bottom:3px;font-size:12px;line-height:1.5;}
+.chat-msg:hover{background:var(--card);}
+.chat-sender{font-weight:700;margin-right:4px;}
+.chat-sender.owner{color:var(--blaze);}
+.chat-sender.subscriber{color:var(--purple);}
+.chat-sender.moderator{color:var(--red);}
+.chat-text{color:var(--muted2);}
+.bot-msg{background:var(--blazedim);border:1px solid rgba(240,185,11,.15);border-radius:8px;padding:5px 8px;margin-bottom:3px;font-size:12px;}
+.chat-input-row{padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;}
+.chat-input-row input{flex:1;background:var(--card);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;font-family:inherit;}
+.chat-input-row input:focus{outline:1px solid var(--blaze);}
+
+/* BUTTONS */
+.btn{background:var(--blaze);color:#000;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:700;font-size:12px;font-family:inherit;white-space:nowrap;}
+.btn:hover{background:var(--blaze2);}
+.btn-sm{padding:5px 10px;font-size:11px;}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--muted2);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-family:inherit;}
+.btn-ghost:hover{border-color:var(--blaze);color:var(--blaze);}
+
+/* SHOP TABLE */
+.shop-table{width:100%;border-collapse:collapse;font-size:12px;}
+.shop-table th{text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);}
+.shop-table td{padding:8px 10px;border-bottom:1px solid var(--border);}
+.shop-table tr:hover td{background:var(--card);}
+
+/* EMPTY */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;color:var(--muted);text-align:center;gap:8px;}
+.empty-icon{font-size:28px;opacity:.4;}
+
+/* COMMAND CARDS */
+.cmds-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:4px;}
+.cmd-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;transition:border-color .15s,background .15s;}
+.cmd-card:hover{border-color:var(--blaze);background:var(--blazedim);}
+.cmd-card code{color:var(--blaze);font-family:'JetBrains Mono',monospace;font-size:11px;display:block;margin-bottom:3px;}
+.cmd-card span{color:var(--muted2);font-size:11px;}
+
+/* AI TOOL CARDS */
+.ai-tool-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s,background .15s;text-align:center;}
+.ai-tool-card:hover{border-color:var(--blaze);background:var(--blazedim);}
+.ai-icon{font-size:24px;margin-bottom:6px;}
+.ai-name{font-size:13px;font-weight:700;margin-bottom:3px;}
+.ai-desc{font-size:11px;color:var(--muted2);}
+
+/* TOAST */
+#toast{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast-item{background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:12px 16px;font-size:13px;min-width:260px;animation:toastin .3s ease;box-shadow:0 8px 30px rgba(0,0,0,.4);}
+@keyframes toastin{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+
+/* Hide mobile-only elements on desktop */
+.mob-nav { display: none; }
+.mob-stats { display: none; }
+
+/* ── MOBILE ── */
+@media(max-width:768px){
+  /* Hero */
+  .hero{margin:32px auto;padding:0 16px;}
+  #dash-view { padding-bottom: 60px; }
+  .hero h1{font-size:28px;}
+  .hero p{font-size:14px;}
+  .hero-steps{grid-template-columns:1fr;gap:10px;}
+  .hero-cta{width:100%;justify-content:center;padding:14px 20px;font-size:15px;}
+
+  /* Topbar */
+  .topbar{padding:0 14px;height:52px;}
+  .logo{font-size:15px;}
+  .logo-dot{width:7px;height:7px;}
+  .conn-pill{font-size:10px;padding:3px 8px;}
+  .user-pill .uname{display:none;}
+  #logout-btn{font-size:11px;padding:4px 8px;}
+
+  /* Dashboard layout — single column, sidebar/right hidden */
+  .dash{
+    display:flex;
+    flex-direction:column;
+    height:calc(100vh - 52px);
+  }
+  .dash-sidebar{display:none;}
+  .dash-right{display:none;}
+  .dash-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+
+  /* Mobile stats bar — horizontal scroll at top of dashboard */
+  .mob-stats{
+    display:flex;
+    gap:8px;
+    padding:10px 14px;
+    overflow-x:auto;
+    border-bottom:1px solid var(--border);
+    background:var(--surface);
+    flex-shrink:0;
+  }
+  .mob-stats::-webkit-scrollbar{display:none;}
+  .mob-stat{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:8px 14px;
+    text-align:center;
+    flex-shrink:0;
+    min-width:64px;
+  }
+  .mob-stat .msv{font-size:18px;font-weight:700;line-height:1;}
+  .mob-stat .msl{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
+  .mob-stat.blaze .msv{color:var(--blaze);}
+  .mob-stat.green .msv{color:var(--green);}
+
+  /* Tabs — scrollable horizontal */
+  .main-tabs{
+    overflow-x:auto;
+    flex-shrink:0;
+  }
+  .main-tabs::-webkit-scrollbar{display:none;}
+  .tab{padding:10px 14px;font-size:12px;white-space:nowrap;}
+
+  /* Main body */
+  .main-body{padding:12px 14px;flex:1;overflow-y:auto;}
+
+  /* Leaderboard */
+  .lb-header{flex-direction:column;gap:8px;align-items:stretch;}
+  .lb-header .btn{width:100%;}
+  .lb-title{font-size:16px;}
+  .lb-item{padding:10px 12px;gap:10px;}
+  .lb-av{width:32px;height:32px;}
+  .lb-name{font-size:12px;}
+  .score-v{font-size:15px;}
+
+  /* Form rows — stack vertically */
+  .form-row{flex-direction:column;gap:10px;}
+  .form-row .btn{width:100%;}
+  .field{width:100%!important;max-width:100%!important;}
+
+  /* Bottom nav bar - pure CSS, no JS display toggle needed */
+  .mob-nav{
+    display:flex;
+    background:var(--surface);
+    border-top:1px solid var(--border);
+    padding:0;
+    padding-bottom:env(safe-area-inset-bottom, 0px);
+    z-index:40;
+    position:fixed;
+    bottom:0;left:0;right:0;
+  }
+  .mob-nav-btn{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:8px 4px;
+    gap:3px;
+    cursor:pointer;
+    border:none;
+    background:none;
+    color:var(--muted);
+    font-size:9px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.5px;
+    font-family:inherit;
+    -webkit-tap-highlight-color:transparent;
+    transition:color .15s;
+  }
+  .mob-nav-btn .ni{font-size:18px;line-height:1;}
+  .mob-nav-btn.active{color:var(--blaze);}
+  .mob-nav-btn:active{background:var(--blazedim);}
+
+  /* Mobile chat drawer */
+  .mob-chat-drawer{
+    position:fixed;
+    bottom:0;left:0;right:0;
+    height:70vh;
+    background:var(--surface);
+    border-top:1px solid var(--border);
+    border-radius:20px 20px 0 0;
+    z-index:100;
+    display:flex;
+    flex-direction:column;
+    transform:translateY(100%);
+    transition:transform .3s cubic-bezier(.4,0,.2,1);
+  }
+  .mob-chat-drawer.open{transform:translateY(0);}
+  .mob-chat-handle{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 16px;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+  }
+  .mob-chat-handle .handle-bar{
+    width:36px;height:4px;background:var(--border2);border-radius:2px;
+    position:absolute;left:50%;transform:translateX(-50%);top:8px;
+  }
+  .mob-chat-handle span{font-size:13px;font-weight:700;color:var(--text);}
+  .mob-chat-body{flex:1;overflow-y:auto;padding:10px 14px;}
+  .mob-chat-input{
+    padding:10px 14px;
+    border-top:1px solid var(--border);
+    display:flex;
+    gap:8px;
+    flex-shrink:0;
+    padding-bottom:env(safe-area-inset-bottom, 10px);
+  }
+  .mob-chat-input input{
+    flex:1;
+    background:var(--card);
+    border:1px solid var(--border2);
+    color:var(--text);
+    padding:10px 12px;
+    border-radius:10px;
+    font-size:14px;
+    font-family:inherit;
+  }
+  .mob-chat-input input:focus{outline:1px solid var(--blaze);}
+  .mob-overlay{
+    position:fixed;inset:0;
+    background:rgba(0,0,0,.6);
+    z-index:99;
+    display:none;
+  }
+  .mob-overlay.show{display:block;}
+
+  /* Mobile commands sheet */
+  .mob-cmds-drawer{
+    position:fixed;
+    bottom:0;left:0;right:0;
+    max-height:80vh;
+    background:var(--surface);
+    border-top:1px solid var(--border);
+    border-radius:20px 20px 0 0;
+    z-index:100;
+    display:flex;
+    flex-direction:column;
+    transform:translateY(100%);
+    transition:transform .3s cubic-bezier(.4,0,.2,1);
+    overflow:hidden;
+  }
+  .mob-cmds-drawer.open{transform:translateY(0);}
+  .mob-cmds-body{overflow-y:auto;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .mob-cmd-chip{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:12px;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .mob-cmd-chip code{color:var(--blaze);font-family:'JetBrains Mono',monospace;font-size:11px;display:block;margin-bottom:2px;}
+  .mob-cmd-chip span{color:var(--muted2);font-size:10px;}
+
+  /* Toast bottom offset on mobile */
+  #toast{bottom:80px;right:12px;left:12px;}
+  .toast-item{min-width:unset;width:100%;}
+
+  /* Leave btn */
+  .leave-btn{font-size:14px;padding:12px;}
+
+  /* Shop table — card view on mobile */
+  .shop-table thead{display:none;}
+  .shop-table tr{display:block;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;padding:10px 12px;}
+  .shop-table td{display:flex;justify-content:space-between;padding:4px 0;border:none;font-size:12px;}
+  .shop-table td::before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="logo-dot"></div> blazeguy</div>
+  <div class="topbar-right">
+    <div id="conn-pill" class="conn-pill off">Not Connected</div>
+    <div id="user-area"></div>
+    <button class="btn-ghost" id="logout-btn" style="display:none" onclick="logout()">Logout</button>
+  </div>
+</div>
+
+<!-- HERO (shown when not joined) -->
+<div id="hero-view">
+  <div class="hero">
+    <h1>The smartest bot<br>on <span>Blaze.stream</span></h1>
+    <p>Loyalty tracking, mini games, polls, custom commands, loyalty shop, phrase tracking, spam protection and more — all free. Type <strong style="color:var(--blaze)">!join</strong> in our chat or connect below.</p>
+    <div class="hero-steps">
+      <div class="step">
+        <div class="step-num">Step 1</div>
+        <h3>Follow Us on Blaze</h3>
+        <p>Visit <strong style="color:var(--blaze)">blaze.stream/blazeguy</strong> and follow the channel — required to use !join.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">Step 2</div>
+        <h3>Type !join in chat</h3>
+        <p>Type <strong style="color:var(--blaze)">!join</strong> in our Blaze chat and the bot will immediately enter your channel.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">Step 3</div>
+        <h3>Mod the bot</h3>
+        <p>Type <strong style="color:var(--blaze)">/mod blazeguy</strong> in your chat to unlock full moderation features.</p>
+      </div>
+    </div>
+    <button class="hero-cta" onclick="startOAuth()">⚡ Login with Blaze to manage your dashboard</button>
+  </div>
+</div>
+
+<!-- DASHBOARD (shown when joined) -->
+<div id="dash-view" style="display:none;">
+  <div class="dash">
+    <!-- MOBILE STATS BAR (only shown on mobile via CSS) -->
+    <div class="mob-stats" id="mob-stats-bar" style="display:none;">
+      <div class="mob-stat blaze"><div class="msv" id="ms-chatters">0</div><div class="msl">Chatters</div></div>
+      <div class="mob-stat"><div class="msv" id="ms-msgs">0</div><div class="msl">Messages</div></div>
+      <div class="mob-stat green"><div class="msv" id="ms-follows">0</div><div class="msl">Follows</div></div>
+      <div class="mob-stat"><div class="msv" id="ms-subs">0</div><div class="msl">Subs</div></div>
+      <div class="mob-stat"><div class="msv" id="ms-gifts">0</div><div class="msl">Gifts</div></div>
+      <div class="mob-stat blaze"><div class="msv" id="ms-votes">0</div><div class="msl">Votes</div></div>
+    </div>
+    <!-- SIDEBAR -->
+    <div class="dash-sidebar">
+      <div class="sb-section">
+        <div class="sb-label">Live Stats</div>
+        <div class="stat-grid">
+          <div class="stat-card blaze"><div class="sv" id="s-chatters">0</div><div class="sl">Chatters</div></div>
+          <div class="stat-card"><div class="sv" id="s-msgs">0</div><div class="sl">Messages</div></div>
+          <div class="stat-card green"><div class="sv" id="s-follows">0</div><div class="sl">Follows</div></div>
+          <div class="stat-card"><div class="sv" id="s-subs">0</div><div class="sl">Subs</div></div>
+          <div class="stat-card"><div class="sv" id="s-gifts">0</div><div class="sl">Gifts</div></div>
+          <div class="stat-card blaze"><div class="sv" id="s-votes">0</div><div class="sl">Votes</div></div>
+        </div>
+      </div>
+      <div class="sb-section" style="flex:1;overflow-y:auto;">
+        <div class="sb-label">Bot Commands</div>
+        <div class="cmd-list">
+        <div class="cmd-item"><code>!devoted</code><div class="cd">Top 5 loyal chatters</div></div>
+          <div class="cmd-item"><code>!loyalty [@user]</code><div class="cd">Rank & devotion score</div></div>
+          <div class="cmd-item"><code>!shoutout @user</code><div class="cd">Shoutout with stats</div></div>
+          <div class="cmd-item"><code>!balance [@user]</code><div class="cd">Point balance</div></div>
+          <div class="cmd-item"><code>!leaderboard</code><div class="cd">Post top 3 in chat</div></div>
+          <div class="cmd-item"><code>!shop</code><div class="cd">Loyalty shop</div></div>
+          <div class="cmd-item"><code>!buy slug</code><div class="cd">Redeem item</div></div>
+          <div class="cmd-item"><code>!brb [mins]</code><div class="cd">BRB mode</div></div>
+          <div class="cmd-item"><code>!poll Q? | A | B</code><div class="cd">Live poll</div></div>
+          <div class="cmd-item"><code>!ask question</code><div class="cd">AI answers in chat</div></div>
+          <div class="cmd-item"><code>!roast @user</code><div class="cd">AI roast</div></div>
+          <div class="cmd-item"><code>!predict question</code><div class="cd">AI prediction</div></div>
+          <div class="cmd-item"><code>!games</code><div class="cd">coinflip, roll, rps, trivia, heist</div></div>
+          <div class="cmd-item"><code>!addcmd !cmd text</code><div class="cd">Custom command</div></div>
+          <div class="cmd-item"><code>!addtimer 30 msg</code><div class="cd">Timed message</div></div>
+          <div class="cmd-item"><code>!leave</code><div class="cd">Remove bot</div></div>
+        </div>
+      </div>
+      <div class="sb-section">
+        <button class="leave-btn" onclick="leaveBot()">⚠ Remove Bot from Channel</button>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="dash-main">
+      <div class="main-tabs">
+        <div class="tab active" onclick="switchTab('lb',this)">🏆 Board</div>
+        <div class="tab" onclick="switchTab('alerts',this)">🔔 Alerts</div>
+        <div class="tab" onclick="switchTab('ai',this)">🤖 AI Tools</div>
+        <div class="tab" onclick="switchTab('cmds',this)">📋 Commands</div>
+        <div class="tab" onclick="switchTab('shop',this)">🛒 Shop</div>
+        <div class="tab" onclick="switchTab('settings',this)">⚙ Settings</div>
+      </div>
+      <div class="main-body" id="main-body">
+
+        <!-- LEADERBOARD -->
+        <div id="tab-lb">
+          <div class="lb-header">
+            <div><div class="lb-title">Devotion Leaderboard</div><div class="lb-sub">Scored live · chats, follows, subs, gifts & votes</div></div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-ghost btn-sm" onclick="botCmd('!devoted')">Post Top 5</button>
+              <button class="btn btn-sm" onclick="botCmd('!leaderboard')">Post Top 3 ⚡</button>
+            </div>
+          </div>
+          <div class="lb-list" id="lb-list"><div class="empty"><div class="empty-icon">🎯</div><div>Waiting for chat activity…</div></div></div>
+        </div>
+
+        <!-- ALERTS -->
+        <div id="tab-alerts" style="display:none;">
+          <div class="lb-header">
+            <div><div class="lb-title">Live Event Feed</div><div class="lb-sub">Every channel event in real time</div></div>
+            <button class="btn-ghost" onclick="document.getElementById('alert-feed').innerHTML=''">Clear</button>
+          </div>
+          <div id="alert-feed"></div>
+        </div>
+
+        <!-- AI TOOLS -->
+        <div id="tab-ai" style="display:none;">
+          <div class="lb-header"><div><div class="lb-title">AI Tools</div><div class="lb-sub">Powered by Google Gemini · Free</div></div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+            <div class="ai-tool-card" onclick="aiTool('ask')">
+              <div class="ai-icon">🤖</div>
+              <div class="ai-name">Ask AI</div>
+              <div class="ai-desc">Answer any question in chat</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('roast')">
+              <div class="ai-icon">🔥</div>
+              <div class="ai-name">Roast</div>
+              <div class="ai-desc">Friendly roast a viewer</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('compliment')">
+              <div class="ai-icon">💛</div>
+              <div class="ai-name">Compliment</div>
+              <div class="ai-desc">Hype up a viewer</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('predict')">
+              <div class="ai-icon">🔮</div>
+              <div class="ai-name">Predict</div>
+              <div class="ai-desc">Fun stream prediction</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('story')">
+              <div class="ai-icon">📖</div>
+              <div class="ai-name">Story</div>
+              <div class="ai-desc">Short story with top viewers</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('recap')">
+              <div class="ai-icon">📋</div>
+              <div class="ai-name">Recap</div>
+              <div class="ai-desc">AI stream session summary</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('aishoutout')">
+              <div class="ai-icon">📣</div>
+              <div class="ai-name">AI Shoutout</div>
+              <div class="ai-desc">Personalised shoutout</div>
+            </div>
+            <div class="ai-tool-card" onclick="aiTool('aimod')">
+              <div class="ai-icon">🛡</div>
+              <div class="ai-name">AI Mod Check</div>
+              <div class="ai-desc">Check if a message is toxic</div>
+            </div>
+          </div>
+          <div id="ai-input-area" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;">
+            <div class="field"><label id="ai-input-label">Input</label><input id="ai-input" placeholder=""></div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button class="btn" onclick="runAiTool()">Run in Chat ⚡</button>
+              <button class="btn-ghost" onclick="document.getElementById('ai-input-area').style.display='none'">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMMANDS TAB -->
+        <div id="tab-cmds" style="display:none;">
+          <div class="lb-header"><div><div class="lb-title">All Commands</div><div class="lb-sub">Click any command to run it in chat</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:16px;">
+
+            <div><div class="sb-label" style="margin-bottom:8px;">🏆 Loyalty</div>
+            <div class="cmds-grid">
+              <div class="cmd-card" onclick="quickRunCmd('!devoted')"><code>!devoted</code><span>Top 5 most loyal viewers</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!leaderboard')"><code>!leaderboard</code><span>Post top 3 in chat</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!loyalty','Username (optional)')"><code>!loyalty [@user]</code><span>Check rank & score</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!milestone','Username (optional)')"><code>!milestone [@user]</code><span>Progress to next tier</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!balance','Username (optional)')"><code>!balance [@user]</code><span>Point balance</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!shoutout','Username')"><code>!shoutout @user</code><span>Shoutout with stats</span></div>
+            </div></div>
+
+            <div><div class="sb-label" style="margin-bottom:8px;">🎮 Games</div>
+            <div class="cmds-grid">
+              <div class="cmd-card" onclick="quickRunCmd('!coinflip heads 10')"><code>!coinflip heads 10</code><span>Bet pts on heads/tails</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!roll 6 10')"><code>!roll 6 10</code><span>Roll dice, bet pts</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!rps rock 10')"><code>!rps rock 10</code><span>Rock paper scissors</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!trivia')"><code>!trivia</code><span>Start a trivia question</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!heist 15')"><code>!heist 15</code><span>Start a crew heist</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!games')"><code>!games</code><span>Show all games in chat</span></div>
+            </div></div>
+
+            <div><div class="sb-label" style="margin-bottom:8px;">🤖 AI</div>
+            <div class="cmds-grid">
+              <div class="cmd-card" onclick="promptRunCmd('!ask','Question for AI')"><code>!ask question</code><span>AI answers in chat</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!roast','Username')"><code>!roast @user</code><span>Funny AI roast</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!compliment','Username')"><code>!compliment @user</code><span>AI compliment</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!recap')"><code>!recap</code><span>AI stream summary</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!predict','Question')"><code>!predict question</code><span>AI prediction</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!story')"><code>!story</code><span>AI story with top viewers</span></div>
+            </div></div>
+
+            <div><div class="sb-label" style="margin-bottom:8px;">🛒 Shop</div>
+            <div class="cmds-grid">
+              <div class="cmd-card" onclick="quickRunCmd('!shop')"><code>!shop</code><span>Show shop items</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!buy','Item slug')"><code>!buy slug</code><span>Redeem an item</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!additem','slug Name cost (e.g. so Shoutout 200)')"><code>!additem</code><span>Add shop item</span></div>
+            </div></div>
+
+            <div><div class="sb-label" style="margin-bottom:8px;">⚙ Stream Tools</div>
+            <div class="cmds-grid">
+              <div class="cmd-card" onclick="promptRunCmd('!brb','Minutes')"><code>!brb [mins]</code><span>BRB mode timer</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!back')"><code>!back</code><span>Return from BRB</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!poll','Question? | Option A | Option B')"><code>!poll</code><span>Live viewer poll</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!endpoll')"><code>!endpoll</code><span>End active poll</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!so','Username')"><code>!so @user</code><span>Shoutout + clip</span></div>
+              <div class="cmd-card" onclick="promptRunCmd('!hug','Username')"><code>!hug @user</code><span>Send a hug</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!uptime')"><code>!uptime</code><span>Bot uptime & stats</span></div>
+              <div class="cmd-card" onclick="quickRunCmd('!commands')"><code>!commands</code><span>List in chat</span></div>
+            </div></div>
+
+            <div><div class="sb-label" style="margin-bottom:8px;">📋 Custom Commands</div>
+            <div class="form-row" style="margin-bottom:10px;">
+              <div class="field"><label>Trigger</label><input id="cc-trigger" placeholder="!discord"></div>
+              <div class="field"><label>Response ({user} = chatter)</label><input id="cc-response" placeholder="Join: discord.gg/link"></div>
+              <button class="btn" onclick="addQuickCmd()">Add</button>
+            </div>
+            <div id="custom-cmds-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- SHOP -->
+        <div id="tab-shop" style="display:none;">
+          <div class="lb-header"><div><div class="lb-title">Loyalty Shop</div><div class="lb-sub">Viewers spend points to redeem rewards</div></div></div>
+          <div class="form-row" style="margin-bottom:20px;">
+            <div class="field"><label>Item Slug</label><input id="shop-slug" placeholder="shoutout"></div>
+            <div class="field"><label>Item Name</label><input id="shop-name" placeholder="Channel Shoutout"></div>
+            <div class="field" style="max-width:100px;"><label>Cost (pts)</label><input id="shop-cost" type="number" placeholder="200"></div>
+            <div class="field" style="max-width:80px;"><label>Stock (-1=∞)</label><input id="shop-stock" type="number" value="-1"></div>
+            <button class="btn" style="align-self:flex-end;" onclick="addShopItem()">Add Item</button>
+          </div>
+          <table class="shop-table">
+            <thead><tr><th>Name</th><th>Slug (!buy)</th><th>Cost</th><th>Stock</th></tr></thead>
+            <tbody id="shop-tbody"><tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No items yet — add one above</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="tab-settings" style="display:none;">
+          <div class="lb-title" style="margin-bottom:20px;">Channel Settings</div>
+          <div class="form-row">
+            <div class="field"><label>Currency Name</label><input id="set-currency" placeholder="points"></div>
+            <button class="btn" onclick="saveCurrency()">Save</button>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>Tracked Phrase</label><input id="set-phrase" placeholder="GG / hype / etc"></div>
+            <button class="btn" onclick="savePhrase()">Set Phrase</button>
+          </div>
+          <div style="margin-top:20px;">
+            <div class="toggle-row">
+              <div><div class="tl">Spam Protection</div><div class="td">Auto-ban known spam bots</div></div>
+              <div class="toggle on" id="tog-spam" onclick="toggleSetting('spam',this)"></div>
+            </div>
+            <div class="toggle-row">
+              <div><div class="tl">Event Announcements</div><div class="td">Bot announces follows, subs, gifts in chat</div></div>
+              <div class="toggle on" id="tog-events" onclick="toggleSetting('events',this)"></div>
+            </div>
+          </div>
+          <div style="margin-top:24px;">
+            <div class="lb-title" style="font-size:15px;margin-bottom:4px;">📺 OBS Overlay</div>
+            <div class="lb-sub" style="margin-bottom:12px;">Add as Browser Source in OBS — 1920×1080, transparent background</div>
+            <div id="obs-url-box" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--blaze);word-break:break-all;"></div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button class="btn btn-sm" onclick="copyOverlayUrl()">📋 Copy URL</button>
+              <a id="obs-preview-link" href="#" target="_blank" class="btn-ghost" style="padding:5px 10px;font-size:11px;border-radius:6px;text-decoration:none;">👁 Preview</a>
+            </div>
+            <div style="margin-top:10px;font-size:11px;color:var(--muted2);">
+              In OBS: Sources → + → Browser Source → paste URL → 1920×1080 → ✅ Shutdown source when not visible
+            </div>
+          </div>
+
+          <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);">
+            <button class="leave-btn" onclick="leaveBot()">⚠ Remove blazeguy from Channel</button>
+          </div>
+            <div class="form-row">
+              <div class="field"><label>Trigger</label><input id="cmd-trigger" placeholder="!discord"></div>
+              <div class="field"><label>Response ({user} = username)</label><input id="cmd-response" placeholder="Join our Discord: https://..."></div>
+              <button class="btn" onclick="addCmd()">Add</button>
+            </div>
+            <div id="cmd-list-area"></div>
+          </div>
+          <div style="margin-top:24px;">
+            <div class="lb-title" style="font-size:15px;margin-bottom:12px;">Timed Messages</div>
+            <div class="form-row">
+              <div class="field" style="max-width:100px;"><label>Every (mins)</label><input id="timer-mins" type="number" placeholder="30" value="30"></div>
+              <div class="field"><label>Message</label><input id="timer-msg" placeholder="Follow us for more content!"></div>
+              <button class="btn" onclick="addTimer()">Add</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT: LIVE CHAT -->
+    <div class="dash-right">
+      <div class="rp-header">Live Alerts <button class="btn-ghost" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('chat-feed').innerHTML=''">Clear</button></div>
+      <div class="chat-feed" id="chat-feed"><div class="empty"><div class="empty-icon">🔔</div><div>Events appear here</div></div></div>
+      <div class="chat-input-row">
+        <input id="chat-input" placeholder="Run a bot command e.g. !devoted" onkeydown="if(event.key==='Enter')sendBotMsg()" style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+        <button class="btn btn-sm" onclick="sendBotMsg()">Run</button>
+      </div>
+    </div>
+  </div>
+  </div><!-- end .dash -->
+
+  <!-- MOBILE OVERLAY -->
+  <div class="mob-overlay" id="mob-overlay" onclick="closeMobDrawers()"></div>
+
+  <!-- MOBILE CHAT DRAWER -->
+  <div class="mob-chat-drawer" id="mob-chat-drawer">
+    <div class="mob-chat-handle">
+      <div class="handle-bar"></div>
+      <span>⚡ Run Command</span>
+      <button class="btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="closeMobDrawers()">Close</button>
+    </div>
+    <div class="mob-chat-body" id="mob-chat-body">
+      <div class="empty"><div class="empty-icon">⚡</div><div>Type a command like !devoted</div></div>
+    </div>
+    <div class="mob-chat-input">
+      <input id="mob-chat-input" placeholder="!devoted, !leaderboard…" onkeydown="if(event.key==='Enter')sendMobBotMsg()" style="font-family:'JetBrains Mono',monospace;">
+      <button class="btn" onclick="sendMobBotMsg()">Run</button>
+    </div>
+  </div>
+
+  <!-- MOBILE COMMANDS DRAWER -->
+  <div class="mob-cmds-drawer" id="mob-cmds-drawer">
+    <div class="mob-chat-handle" style="position:relative;padding-top:20px;">
+      <div class="handle-bar"></div>
+      <span>⚡ Bot Commands</span>
+      <button class="btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="closeMobDrawers()">Close</button>
+    </div>
+    <div class="mob-cmds-body">
+      <div class="mob-cmd-chip" onclick="quickCmd('!devoted')"><code>!devoted</code><span>Top 5 loyal chatters</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!leaderboard')"><code>!leaderboard</code><span>Post top 3 in chat</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!commands')"><code>!commands</code><span>List all commands</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!games')"><code>!games</code><span>Show mini games</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!shop')"><code>!shop</code><span>Loyalty shop</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!uptime')"><code>!uptime</code><span>Bot uptime</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!shoutout')"><code>!shoutout</code><span>Shoutout a user</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!so')"><code>!so</code><span>Shoutout + clip</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!loyalty')"><code>!loyalty</code><span>Check loyalty rank</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!balance')"><code>!balance</code><span>Point balance</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!brb 5')"><code>!brb</code><span>BRB 5 min</span></div>
+      <div class="mob-cmd-chip" onclick="quickCmd('!back')"><code>!back</code><span>Back from BRB</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!poll')"><code>!poll</code><span>Start a poll</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!addcmd')"><code>!addcmd</code><span>Add custom command</span></div>
+      <div class="mob-cmd-chip" onclick="promptCmd('!additem')"><code>!additem</code><span>Add shop item</span></div>
+      <div class="mob-cmd-chip" style="grid-column:1/-1;background:var(--reddim);border-color:rgba(240,80,80,.2);" onclick="leaveBot()">
+        <code style="color:var(--red);">!leave</code><span style="color:var(--red);">Remove bot from channel</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end #dash-view -->
+
+<!-- MOBILE BOTTOM NAV — outside dash-view so it always renders -->
+<nav class="mob-nav" id="mob-nav">
+  <button class="mob-nav-btn active" onclick="switchTab('lb',this);mobNavActive(this)" id="mobnav-lb">
+    <span class="ni">🏆</span>Board
+  </button>
+  <button class="mob-nav-btn" onclick="switchTab('alerts',this);mobNavActive(this)" id="mobnav-alerts">
+    <span class="ni">🔔</span>Alerts
+  </button>
+  <button class="mob-nav-btn" onclick="switchTab('cmds',this);mobNavActive(this)" id="mobnav-cmds-tab">
+    <span class="ni">📋</span>Commands
+  </button>
+  <button class="mob-nav-btn" onclick="switchTab('ai',this);mobNavActive(this)" id="mobnav-ai">
+    <span class="ni">🤖</span>AI
+  </button>
+  <button class="mob-nav-btn" onclick="switchTab('settings',this);mobNavActive(this)" id="mobnav-settings">
+    <span class="ni">⚙</span>Settings
+  </button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG — no secrets, all proxied through backend ──
+const BOT_URL  = 'https://hotemin.onrender.com';
+const REDIRECT = window.location.href.split('?')[0];
+
+let accessToken = '';
+let channelId   = '';
+let pollTimer   = null;
+
+// ── OAUTH — proxied through backend so client secret never touches frontend ──
+async function startOAuth() {
+  try {
+    const res  = await fetch(`${BOT_URL}/oauth/auth-url`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirectUri: REDIRECT })
+    });
+    const data = await res.json();
+    if (data.url) {
+      sessionStorage.setItem('bc_state',    data.state);
+      sessionStorage.setItem('bc_verifier', data.codeVerifier);
+      window.location.href = data.url;
+    } else { toast('OAuth error: ' + JSON.stringify(data), true); }
+  } catch(e) { toast('Login failed: ' + e.message, true); }
+}
+
+async function handleCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code   = params.get('code');
+  if (!code) return;
+  window.history.replaceState({}, '', window.location.pathname);
+  try {
+    const res  = await fetch(`${BOT_URL}/oauth/token`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        code, redirectUri: REDIRECT,
+        codeVerifier: sessionStorage.getItem('bc_verifier') || ''
+      })
+    });
+    const data = await res.json();
+    if (data.accessToken) {
+      accessToken = data.accessToken;
+      sessionStorage.setItem('bc_token', accessToken);
+      if (data.refreshToken) sessionStorage.setItem('bc_refresh', data.refreshToken);
+      await loadProfile();
+    } else { toast('Token error: ' + JSON.stringify(data), true); }
+  } catch(e) { toast('Callback failed: ' + e.message, true); }
+}
+
+async function loadProfile() {
+  try {
+    const res  = await fetch(`${BOT_URL}/api/me`, {
+      headers: { 'authorization': `Bearer ${accessToken}` }
+    });
+    const data = await res.json();
+    const u    = data.data || data;
+    if (u?.username) {
+      channelId = u.id || u.userId || '';
+      sessionStorage.setItem('bc_channel', channelId);
+      // Show user pill
+      document.getElementById('user-area').innerHTML = `
+        <div class="user-pill">
+          ${u.avatarUrl ? `<img src="${u.avatarUrl}" onerror="this.style.display='none'">` : ''}
+          <span class="uname">@${u.username}</span>
+        </div>`;
+      document.getElementById('logout-btn').style.display = '';
+      // Check if bot is already in their channel
+      await checkBotStatus();
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function checkBotStatus() {
+  try {
+    const res  = await fetch(`${BOT_URL}/api/state?channelId=${channelId}`);
+    const data = await res.json();
+    if (data.connected || data.topUsers?.length >= 0) {
+      showDashboard();
+      startPolling();
+    }
+    // else show hero — bot not in their channel yet
+  } catch { /* show hero */ }
+}
+
+async function connectToBot() {
+  try {
+    const res  = await fetch(`${BOT_URL}/api/connect`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ token: accessToken, channelId })
+    });
+    const data = await res.json();
+    if (data.ok) { showDashboard(); startPolling(); toast('✅ Bot connected!'); }
+    else { toast('Connect failed: ' + JSON.stringify(data)); }
+  } catch(e) { toast('Cannot reach bot: ' + e.message); }
+}
+
+function showDashboard() {
+  document.getElementById('hero-view').style.display = 'none';
+  document.getElementById('dash-view').style.display = 'block';
+  initMobileUI();
+  updateOverlayUrl();
+}
+
+function showHero() {
+  document.getElementById('hero-view').style.display = 'block';
+  document.getElementById('dash-view').style.display = 'none';
+}
+
+// ── POLLING ──
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollState, 3000);
+  pollState();
+}
+
+async function pollState() {
+  if (!channelId) return;
+  try {
+    const res  = await fetch(`${BOT_URL}/api/state?channelId=${channelId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Conn status
+    const pill = document.getElementById('conn-pill');
+    pill.textContent = data.connected ? '● Live' : '○ Offline';
+    pill.className   = 'conn-pill ' + (data.connected ? 'on' : 'off');
+
+    // Stats
+    if (data.stats) {
+      document.getElementById('s-chatters').textContent = data.stats.chatters;
+      document.getElementById('s-msgs').textContent     = data.stats.msgs;
+      document.getElementById('s-follows').textContent  = data.stats.follows;
+      document.getElementById('s-subs').textContent     = data.stats.subs;
+      document.getElementById('s-gifts').textContent    = data.stats.gifts;
+      document.getElementById('s-votes').textContent    = data.stats.votes;
+      syncMobileStats(data.stats);
+    }
+
+    // Leaderboard
+    if (data.topUsers) renderLeaderboard(data.topUsers);
+
+    // Alerts — only new ones
+    if (data.alerts?.length) {
+      const feed = document.getElementById('alert-feed');
+      feed.querySelectorAll('.empty').forEach(e => e.remove());
+      // Re-render all (server already sorted newest first, max 50)
+      feed.innerHTML = data.alerts.map(a => `
+        <div class="alert-item ${a.type}">
+          <div class="alert-icon">${a.icon}</div>
+          <div>
+            <div class="alert-msg">${esc(a.message)}</div>
+            <div class="alert-time">${new Date(a.created_at||a.time).toLocaleTimeString()}</div>
+          </div>
+        </div>`).join('');
+    }
+  } catch {}
+}
+
+// ── LEADERBOARD ──
+const MILESTONES = [
+  {pts:10,name:'Lurker',icon:'👀'},{pts:100,name:'Regular',icon:'💬'},
+  {pts:250,name:'Devoted',icon:'⭐'},{pts:500,name:'Fanatic',icon:'🔥'},
+  {pts:1000,name:'Diamond',icon:'💎'},{pts:2000,name:'Legend',icon:'👑'}
+];
+function getMilestone(s){let m=MILESTONES[0];for(const ms of MILESTONES){if(s>=ms.pts)m=ms;}return m;}
+
+function renderLeaderboard(users) {
+  const list = document.getElementById('lb-list');
+  if (!users?.length) { list.innerHTML='<div class="empty"><div class="empty-icon">🎯</div><div>Waiting for chat…</div></div>'; return; }
+  const max = users[0].score || 1;
+  list.innerHTML = users.map((u,i) => {
+    const rank = i+1;
+    const ms   = getMilestone(u.score);
+    const pct  = Math.round((u.score/max)*100);
+    const rCls = rank<=3 ? 'r'+rank : '';
+    const medals = ['🥇','🥈','🥉'];
+    const badges = [
+      u.is_subscriber ? '<span class="bdg bdg-sub">SUB</span>' : '',
+      u.is_follower   ? '<span class="bdg bdg-fol">FAN</span>' : '',
+      u.gifts > 0     ? '<span class="bdg bdg-gift">GIFTER</span>' : '',
+    ].join('');
+    return `<div class="lb-item ${rCls}">
+      <div class="rank-n">${rank<=3?medals[rank-1]:rank}</div>
+      <img class="lb-av" src="${u.avatar_url||''}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2236%22 height=%2236%22><rect fill=%22%231E2433%22 width=%2236%22 height=%2236%22 rx=%2218%22/><text x=%2218%22 y=%2224%22 text-anchor=%22middle%22 fill=%22%235A6380%22 font-size=%2216%22>${(u.display_name||u.username||'?')[0].toUpperCase()}</text></svg>'">
+      <div class="lb-info">
+        <div class="lb-name">${esc(u.display_name||u.username)} <span style="font-size:11px">${ms.icon}</span></div>
+        <div class="lb-badges">${badges}</div>
+        <div class="bar-wrap"><div class="bar" style="width:${pct}%"></div></div>
+      </div>
+      <div class="lb-score"><div class="score-v">${u.score}</div><div class="score-l">pts</div></div>
+    </div>`;
+  }).join('');
+}
+
+// ── CHAT ──
+async function sendBotMsg() {
+  const input = document.getElementById('chat-input');
+  const msg   = input.value.trim();
+  if (!msg || !channelId) return;
+  if (!msg.startsWith('!')) { toast('⚠ Only bot commands allowed here — start with !'); return; }
+  input.value = '';
+  try {
+    const res  = await fetch(`${BOT_URL}/api/chat`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ channelId, message: msg })
+    });
+    const data = await res.json();
+    if (!res.ok) { toast('❌ ' + (data.error || 'Command failed')); return; }
+    const feed = document.getElementById('chat-feed');
+    feed.querySelectorAll('.empty').forEach(e=>e.remove());
+    const div = document.createElement('div');
+    div.className = 'bot-msg';
+    div.innerHTML = `<span style="color:var(--blaze);font-weight:700;">⚡ Command</span> <span style="color:var(--muted2)">${esc(msg)}</span>`;
+    feed.appendChild(div);
+    feed.scrollTop = feed.scrollHeight;
+    toast(`✅ ${msg} sent`);
+  } catch { toast('Send failed'); }
+}
+
+async function postLeaderboard() {
+  const res  = await fetch(`${BOT_URL}/api/chat`, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ channelId, message: '!leaderboard' })
+  });
+  toast('Leaderboard posted to chat!');
+}
+
+// ── SHOP ──
+async function addShopItem() {
+  const slug  = document.getElementById('shop-slug').value.trim();
+  const name  = document.getElementById('shop-name').value.trim();
+  const cost  = parseInt(document.getElementById('shop-cost').value);
+  const stock = parseInt(document.getElementById('shop-stock').value);
+  if (!slug||!name||isNaN(cost)) { toast('Fill in all shop fields'); return; }
+  await fetch(`${BOT_URL}/api/chat`, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ channelId, message: `!additem ${slug} ${name} ${cost}` })
+  });
+  toast(`✅ Item "${name}" added!`);
+}
+
+// ── SETTINGS ──
+async function saveCurrency() {
+  const val = document.getElementById('set-currency').value.trim();
+  if (!val) return;
+  await botCmd(`!setcurrency ${val}`);
+  toast(`Currency set to "${val}"`);
+}
+async function savePhrase() {
+  const val = document.getElementById('set-phrase').value.trim();
+  if (!val) return;
+  await botCmd(`!setphrase ${val}`);
+  toast(`Tracking phrase: "${val}"`);
+}
+async function addCmd() {
+  const trigger  = document.getElementById('cmd-trigger').value.trim();
+  const response = document.getElementById('cmd-response').value.trim();
+  if (!trigger||!response) { toast('Fill trigger and response'); return; }
+  await botCmd(`!addcmd ${trigger} ${response}`);
+  toast(`Command ${trigger} added!`);
+}
+async function addTimer() {
+  const mins = document.getElementById('timer-mins').value.trim();
+  const msg  = document.getElementById('timer-msg').value.trim();
+  if (!mins||!msg) { toast('Fill interval and message'); return; }
+  await botCmd(`!addtimer ${mins} ${msg}`);
+  toast(`Timer added every ${mins} min`);
+}
+function toggleSetting(type, el) {
+  el.classList.toggle('on');
+  const on = el.classList.contains('on');
+  botCmd(`!${type} ${on?'on':'off'}`);
+  toast(`${type} ${on?'enabled':'disabled'}`);
+}
+async function botCmd(message) {
+  await fetch(`${BOT_URL}/api/chat`, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ channelId, message })
+  });
+}
+
+// ── LEAVE BOT ──
+async function leaveBot() {
+  if (!confirm('Remove blazeguy from your channel? Your loyalty data is kept.')) return;
+  await fetch(`${BOT_URL}/api/disconnect`, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ channelId })
+  });
+  if (pollTimer) clearInterval(pollTimer);
+  showHero();
+  toast('Bot removed. Type !join anytime to re-add.');
+}
+
+function logout() {
+  sessionStorage.clear();
+  accessToken = ''; channelId = '';
+  document.getElementById('user-area').innerHTML = '';
+  document.getElementById('logout-btn').style.display = 'none';
+  if (pollTimer) clearInterval(pollTimer);
+  showHero();
+}
+
+// ── TABS ──
+// ── AI TOOLS ──
+let currentAiCmd = '';
+const AI_TOOL_CONFIG = {
+  ask:        { label: 'Question for AI to answer in chat', placeholder: 'What is the meaning of life?', cmd: '!ask' },
+  roast:      { label: 'Username to roast', placeholder: 'username (no @)', cmd: '!roast' },
+  compliment: { label: 'Username to compliment', placeholder: 'username (no @)', cmd: '!compliment' },
+  predict:    { label: 'Prediction question', placeholder: 'Will we hit 100 followers today?', cmd: '!predict' },
+  story:      { label: 'Theme (optional)', placeholder: 'gaming adventure in space', cmd: '!story' },
+  recap:      { label: null, cmd: '!recap' },
+  aishoutout: { label: 'Username to shoutout', placeholder: 'username (no @)', cmd: '!aishoutout' },
+  aimod:      { label: 'Message to check for toxicity', placeholder: 'Paste message here', cmd: '!aimod' },
+};
+
+function aiTool(type) {
+  currentAiCmd = type;
+  const cfg = AI_TOOL_CONFIG[type];
+  if (!cfg.label) { botCmd(cfg.cmd); toast(`✅ ${cfg.cmd} sent to chat!`); return; }
+  const area = document.getElementById('ai-input-area');
+  document.getElementById('ai-input-label').textContent = cfg.label;
+  document.getElementById('ai-input').placeholder = cfg.placeholder;
+  document.getElementById('ai-input').value = '';
+  area.style.display = 'block';
+  document.getElementById('ai-input').focus();
+}
+
+function runAiTool() {
+  const cfg   = AI_TOOL_CONFIG[currentAiCmd];
+  const input = document.getElementById('ai-input').value.trim();
+  if (!input) { toast('Enter something first'); return; }
+  botCmd(`${cfg.cmd} ${input}`);
+  toast(`✅ ${cfg.cmd} sent to chat!`);
+  document.getElementById('ai-input-area').style.display = 'none';
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if (el?.classList?.contains('tab')) el.classList.add('active');
+  ['lb','alerts','ai','cmds','shop','settings'].forEach(t => {
+    const el = document.getElementById('tab-'+t);
+    if (el) el.style.display = t===name ? 'block' : 'none';
+  });
+  if (name === 'cmds') loadCustomCmds();
+  closeMobDrawers();
+}
+
+// ── MOBILE ──
+const isMobile = () => window.innerWidth <= 768;
+
+function initMobileUI() {
+  const mobile   = isMobile();
+  const statsBar = document.getElementById('mob-stats-bar');
+  const mainTabs = document.querySelector('.main-tabs');
+  if (statsBar) statsBar.style.display = mobile ? 'flex' : 'none';
+  if (mainTabs) mainTabs.style.display = mobile ? 'none' : 'flex';
+}
+
+window.addEventListener('resize', initMobileUI);
+
+function mobNavActive(el) {
+  document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function openMobChat() {
+  document.getElementById('mob-chat-drawer').classList.add('open');
+  document.getElementById('mob-overlay').classList.add('show');
+  document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mobnav-chat').classList.add('active');
+}
+
+function openMobCmds() {
+  document.getElementById('mob-cmds-drawer').classList.add('open');
+  document.getElementById('mob-overlay').classList.add('show');
+  document.querySelectorAll('.mob-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mobnav-cmds').classList.add('active');
+}
+
+function closeMobDrawers() {
+  document.getElementById('mob-chat-drawer').classList.remove('open');
+  document.getElementById('mob-cmds-drawer').classList.remove('open');
+  document.getElementById('mob-overlay').classList.remove('show');
+}
+
+async function sendMobBotMsg() {
+  const input = document.getElementById('mob-chat-input');
+  const msg   = input.value.trim();
+  if (!msg || !channelId) return;
+  if (!msg.startsWith('!')) { toast('⚠ Only bot commands — start with !'); return; }
+  input.value = '';
+  try {
+    await fetch(`${BOT_URL}/api/chat`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ channelId, message: msg })
+    });
+    const feed = document.getElementById('mob-chat-body');
+    feed.querySelectorAll('.empty').forEach(e => e.remove());
+    const div = document.createElement('div');
+    div.className = 'bot-msg';
+    div.innerHTML = `<span style="color:var(--blaze);font-weight:700;">⚡ ${esc(msg)}</span>`;
+    feed.appendChild(div);
+    feed.scrollTop = feed.scrollHeight;
+    toast(`✅ ${msg} sent`);
+  } catch { toast('Send failed'); }
+}
+
+function quickCmd(cmd) {
+  closeMobDrawers();
+  setTimeout(async () => {
+    await fetch(`${BOT_URL}/api/chat`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ channelId, message: cmd })
+    });
+    toast(`Sent: ${cmd}`);
+  }, 300);
+}
+
+function promptCmd(cmd) {
+  closeMobDrawers();
+  const arg = prompt(`${cmd} — enter argument (e.g. @username):`);
+  if (arg === null) return;
+  quickCmd(arg ? `${cmd} ${arg}` : cmd);
+}
+
+// Sync mobile stats
+function syncMobileStats(stats) {
+  if (!stats) return;
+  document.getElementById('ms-chatters').textContent = stats.chatters;
+  document.getElementById('ms-msgs').textContent     = stats.msgs;
+  document.getElementById('ms-follows').textContent  = stats.follows;
+  document.getElementById('ms-subs').textContent     = stats.subs;
+  document.getElementById('ms-gifts').textContent    = stats.gifts;
+  document.getElementById('ms-votes').textContent    = stats.votes;
+}
+
+// Also mirror chat messages into mobile chat body
+function addMobChatMsg(html) {
+  const feed = document.getElementById('mob-chat-body');
+  if (!feed) return;
+  feed.querySelectorAll('.empty').forEach(e => e.remove());
+  feed.innerHTML += html;
+  feed.scrollTop = feed.scrollHeight;
+}
+// ── OBS OVERLAY ──
+function updateOverlayUrl() {
+  if (!channelId) return;
+  const url  = `${window.location.origin}/overlay.html?channel=${channelId}`;
+  const box  = document.getElementById('obs-url-box');
+  const link = document.getElementById('obs-preview-link');
+  if (box)  box.textContent = url;
+  if (link) link.href = url;
+}
+function copyOverlayUrl() {
+  if (!channelId) { toast('Connect first', true); return; }
+  const url = `${window.location.origin}/overlay.html?channel=${channelId}`;
+  navigator.clipboard.writeText(url).then(() => toast('✅ OBS URL copied!'));
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function toast(msg, isError=false){
+  let c = document.getElementById('toast');
+  if (!c) { c = document.createElement('div'); c.id='toast'; document.body.appendChild(c); }
+  const d = document.createElement('div');
+  d.className = 'toast-item';
+  if (isError) d.style.cssText = 'border-color:rgba(240,80,80,.4);color:#F05050;';
+  d.textContent = msg;
+  c.appendChild(d);
+  setTimeout(() => d.remove(), 3500);
+}
+
+async function quickRunCmd(cmd) {
+  await botCmd(cmd);
+  toast(`✅ ${cmd} sent`);
+}
+async function promptRunCmd(cmd, label) {
+  const input = prompt(`${cmd}\n${label}:`);
+  if (input === null) return;
+  const full = input ? `${cmd} ${input}` : cmd;
+  await botCmd(full);
+  toast(`✅ Sent: ${full}`);
+}
+async function loadCustomCmds() {
+  const area = document.getElementById('custom-cmds-list');
+  if (!area || !channelId) return;
+  area.innerHTML = '<div style="color:var(--muted);font-size:12px;">No custom commands yet — add one above</div>';
+}
+async function addQuickCmd() {
+  const trigger  = document.getElementById('cc-trigger').value.trim();
+  const response = document.getElementById('cc-response').value.trim();
+  if (!trigger || !response) { toast('Fill in both fields', true); return; }
+  const t = trigger.startsWith('!') ? trigger : '!' + trigger;
+  await botCmd(`!addcmd ${t} ${response}`);
+  document.getElementById('cc-trigger').value = '';
+  document.getElementById('cc-response').value = '';
+  toast(`✅ ${t} added!`);
+}
+
+// ── RESTORE SESSION ──
+function restoreSession() {
+  const t  = sessionStorage.getItem('bc_token');
+  const ch = sessionStorage.getItem('bc_channel');
+  if (t && ch) {
+    accessToken = t; channelId = ch;
+    fetch(`${BOT_URL}/api/me`, {
+      headers: { 'authorization': `Bearer ${t}` }
+    }).then(r=>r.json()).then(data=>{
+      const u = data.data||data;
+      if (u?.username) {
+        document.getElementById('user-area').innerHTML = `<div class="user-pill">${u.avatarUrl?`<img src="${u.avatarUrl}" onerror="this.style.display='none'">`:''}
+          <span class="uname">@${u.username}</span></div>`;
+        document.getElementById('logout-btn').style.display = '';
+      }
+    }).catch(()=>{});
+    showDashboard();
+    startPolling();
+  }
+}
+
+// ── INIT ──
+restoreSession();
+handleCallback();
+</script>
+</body>
+</html>
