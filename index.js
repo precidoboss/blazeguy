@@ -75,8 +75,8 @@ async function refreshBotToken() {
       BOT_API_TOKEN = data.accessToken;
       BOT_TOKEN     = data.accessToken;
       if (data.refreshToken) BOT_REFRESH_TOKEN = data.refreshToken;
-      // Update all connected channel sockets to use new token
-      Object.values(sockets).forEach(s => { if (s.token === BOT_TOKEN || !s.token) s.token = BOT_API_TOKEN; });
+      // Single shared socket/token model — every call site reads BOT_TOKEN/BOT_API_TOKEN live,
+      // so nothing per-channel needs to be patched here.
       console.log(`[BOT] ✅ Token refreshed! New length: ${BOT_API_TOKEN.length}`);
       tokenRefreshing = false;
       return true;
@@ -132,9 +132,27 @@ const MILESTONES = [
   { pts: 2000, name: 'Legend',  icon: '👑' },
 ];
 
-// ── IN-MEMORY CHANNEL SOCKETS ──
-// sockets[channelId] = { socket, sessionId, connected, reconnectTimer }
-const sockets = {};
+// ── SINGLE SHARED SOCKET (per Blaze's AUTH_CONN_LIMIT: user tokens get 3 sockets max,
+//    but ONE socket can hold up to 400 room subscriptions — so all channels ride one socket) ──
+// https://dev.blaze.stream/docs/events/limits
+let botSocket = { socket: null, sessionId: '', connected: false, reconnectTimer: null };
+
+// subscribedChannels[channelId] = true once channel.chat.message (+ others) are attached to botSocket
+const subscribedChannels = {};
+
+// Backward-compat shim so existing code that reads sockets[channelId]?.connected / .token
+// keeps working without a full rewrite of every call site.
+const sockets = new Proxy({}, {
+  get(_target, channelId) {
+    if (!subscribedChannels[channelId]) return undefined;
+    return { connected: botSocket.connected, token: BOT_TOKEN };
+  },
+  ownKeys() { return Object.keys(subscribedChannels); },
+  getOwnPropertyDescriptor(_t, channelId) {
+    if (!subscribedChannels[channelId]) return undefined;
+    return { enumerable: true, configurable: true };
+  }
+});
 
 // ── TIMED MESSAGES ENGINE ──
 // timedMsgTimers[channelId] = [intervalIds...]
@@ -354,28 +372,19 @@ async function handleJoin(sender) {
   const followed = await botFollowChannel(streamerId);
   console.log(`[BOT] Follow result for @${username}: ${followed}`);
 
-  // Connect socket to their channel
-  connectChannel(streamerId, BOT_TOKEN);
+  // Attach this channel's event subscriptions to the shared socket
+  const chatOk = await subscribeChannel(streamerId);
 
   // Confirm in blazeguy's channel
   await sendChat(BOT_CHANNEL_ID, BOT_TOKEN,
     `✅ @${username} ⚡ @${BOT_USERNAME} has joined your channel and followed you! Now type /mod ${BOT_USERNAME} in your chat to unlock full features!`);
 
-  // Welcome in streamer's channel — wait for socket confirmed connected
-  let attempts = 0;
-  const welcomeInterval = setInterval(async () => {
-    attempts++;
-    const sock = sockets[streamerId];
-    if (sock?.connected || attempts >= 15) {
-      clearInterval(welcomeInterval);
-      if (sock?.connected) {
-        await sendChat(streamerId, BOT_TOKEN,
-          `⚡ @${BOT_USERNAME} has joined the chat! Loyalty tracking is ON 🏆 I'm now tracking your most devoted viewers. Type !commands to see everything I can do!`);
-      } else {
-        console.error(`[BOT] Socket for @${username} never connected after 15s`);
-      }
-    }
-  }, 1000);
+  if (chatOk) {
+    await sendChat(streamerId, BOT_TOKEN,
+      `⚡ @${BOT_USERNAME} has joined the chat! Loyalty tracking is ON 🏆 I'm now tracking your most devoted viewers. Type !commands to see everything I can do!`);
+  } else {
+    console.error(`[BOT] chat.message subscription failed for @${username} (${streamerId})`);
+  }
 
   console.log(`[BOT] ✅ Joined @${username} (${streamerId})`);
 }
@@ -402,13 +411,8 @@ async function handleLeave(channelId, sender) {
   // Small delay so goodbye message sends before socket closes
   await new Promise(r => setTimeout(r, 1500));
 
-  // Disconnect socket
-  const sock = sockets[targetChannelId];
-  if (sock) {
-    clearTimeout(sock.reconnectTimer);
-    if (sock.socket) sock.socket.disconnect();
-    delete sockets[targetChannelId];
-  }
+  // Detach this channel's subscriptions from the shared socket
+  await unsubscribeChannel(targetChannelId);
 
   // Clear timed message timers
   if (timedMsgTimers[targetChannelId]) {
@@ -428,14 +432,20 @@ async function handleLeave(channelId, sender) {
 }
 
 // ── SUBSCRIPTIONS ──
+// All event types this bot cares about. NOTE: channel.moderate, channel.raid, stream.online/offline
+// etc. require the bot to actually hold moderator/appropriate permissions on that channel — a
+// NOT_FOUND response for those is expected/harmless if the bot isn't modded yet; chat.message is
+// the one that matters for command handling and needs its own success check.
+const EVENT_TYPES = [
+  'channel.chat.message', 'channel.follow', 'channel.unfollow',
+  'channel.subscribe', 'channel.subscription.gift', 'channel.vote',
+  'channel.ban', 'channel.unban', 'channel.raid',
+  'channel.moderate', 'stream.online', 'stream.offline',
+];
+
 async function createSubscriptions(channelId, token, sessionId) {
-  const types = [
-    'channel.chat.message', 'channel.follow', 'channel.unfollow',
-    'channel.subscribe', 'channel.subscription.gift', 'channel.vote',
-    'channel.ban', 'channel.unban', 'channel.raid',
-    'channel.moderate', 'stream.online', 'stream.offline',
-  ];
-  for (const type of types) {
+  let chatOk = false;
+  for (const type of EVENT_TYPES) {
     try {
       const headers = blazeHeaders(BOT_API_TOKEN || token);
       const res  = await blazeFetch(`${API}/events/subscriptions`, {
@@ -443,9 +453,26 @@ async function createSubscriptions(channelId, token, sessionId) {
         body: JSON.stringify({ type, version: '1', sessionId, condition: { channelId } })
       });
       const data = await res.json();
-      console.log(`[${channelId.slice(0,8)}] SUB ${type}:`, data.id ? 'ok' : JSON.stringify(data).slice(0,80));
+      const ok = data.success === true;
+      if (type === 'channel.chat.message') chatOk = ok;
+      console.log(`[${channelId.slice(0,8)}] SUB ${type}:`, ok ? 'ok' : JSON.stringify(data).slice(0,80));
     } catch (e) {
       console.error(`[${channelId.slice(0,8)}] SUB error:`, e.message);
+    }
+  }
+  return chatOk;
+}
+
+async function deleteSubscriptions(channelId, token, sessionId) {
+  for (const type of EVENT_TYPES) {
+    try {
+      const headers = blazeHeaders(BOT_API_TOKEN || token);
+      await blazeFetch(`${API}/events/subscriptions`, {
+        method: 'DELETE', headers,
+        body: JSON.stringify({ type, version: '1', sessionId, condition: { channelId } })
+      });
+    } catch (e) {
+      console.error(`[${channelId.slice(0,8)}] UNSUB error (${type}):`, e.message);
     }
   }
 }
@@ -1279,75 +1306,94 @@ async function handleEvent(channelId, token, type, payload) {
   }
 }
 
-// ── CONNECT ONE CHANNEL ──
-function connectChannel(channelId, token) {
-  const existing = sockets[channelId];
-  if (existing) {
-    clearTimeout(existing.reconnectTimer);
-    if (existing.socket) existing.socket.disconnect();
-  }
+// ── SINGLE SHARED SOCKET ──
+// Blaze caps user-token auth to 3 concurrent Socket.IO connections (AUTH_CONN_LIMIT), but a single
+// connection can hold up to 400 room subscriptions (see https://dev.blaze.stream/docs/events/limits).
+// So instead of one socket per channel, we open ONE socket for the bot's whole identity and attach
+// every joined channel's event subscriptions to that one sessionId. Every EventSub payload carries
+// its own `channelId`, so incoming notifications route to the right channel regardless of which
+// socket received them (there's only ever one).
+function connectBotSocket() {
+  clearTimeout(botSocket.reconnectTimer);
+  if (botSocket.socket) botSocket.socket.disconnect();
 
-  console.log(`[${channelId.slice(0,8)}] Connecting socket...`);
+  console.log('[BOT] Connecting shared socket...');
   const sock = io('https://blaze.stream', { path: '/ws', transports: ['websocket'] });
-  sockets[channelId] = { socket: sock, sessionId: '', connected: false, reconnectTimer: null, token };
+  botSocket = { socket: sock, sessionId: '', connected: false, reconnectTimer: null };
 
-  sock.on('connect', () => console.log(`[${channelId.slice(0,8)}] Socket open`));
+  sock.on('connect', () => console.log('[BOT] Socket open'));
 
   sock.on('eventsub', async (msg) => {
     const { metadata, payload } = msg;
     if (metadata.messageType === 'session_welcome') {
       const sessionId = payload.sessionId;
-      sockets[channelId].sessionId  = sessionId;
-      sockets[channelId].connected  = true;
-      await createSubscriptions(channelId, token, sessionId);
-      await startTimedMessages(channelId, token);
-      // Init settings cache
-      await getSettings(channelId);
-      // Mark connected in DB
-      await supabase.from('channels').update({ connected: true, last_seen: new Date().toISOString() }).eq('id', channelId);
-      console.log(`[${channelId.slice(0,8)}] LIVE — loyalty tracking active`);
+      botSocket.sessionId = sessionId;
+      botSocket.connected = true;
+      console.log(`[BOT] Session ready (${sessionId.slice(0,12)}) — resubscribing all channels...`);
+      await resubscribeAllChannels(sessionId);
+      console.log('[BOT] LIVE — loyalty tracking active on all channels');
       return;
     }
-    handleEvent(channelId, BOT_API_TOKEN || token, metadata.subscriptionType, payload);
+    const channelId = payload?.channelId;
+    if (!channelId) return;
+    handleEvent(channelId, BOT_API_TOKEN || BOT_TOKEN, metadata.subscriptionType, payload);
   });
 
   sock.on('disconnect', async (reason) => {
-    if (sockets[channelId]) sockets[channelId].connected = false;
-    await supabase.from('channels').update({ connected: false }).eq('id', channelId);
-    console.log(`[${channelId.slice(0,8)}] Disconnected: ${reason}. Reconnect in 5s...`);
-    sockets[channelId].reconnectTimer = setTimeout(() => connectChannel(channelId, token), 5000);
+    botSocket.connected = false;
+    await supabase.from('channels').update({ connected: false }).in('id', Object.keys(subscribedChannels));
+    console.log(`[BOT] Disconnected: ${reason}. Reconnect in 5s...`);
+    botSocket.reconnectTimer = setTimeout(connectBotSocket, 5000);
   });
 
   sock.on('connect_error', (e) => {
-    if (sockets[channelId]) sockets[channelId].connected = false;
-    console.error(`[${channelId.slice(0,8)}] Error: ${e.message}. Retry in 10s...`);
-    sockets[channelId].reconnectTimer = setTimeout(() => connectChannel(channelId, token), 10000);
+    botSocket.connected = false;
+    console.error(`[BOT] Socket error: ${e.message}. Retry in 10s...`);
+    botSocket.reconnectTimer = setTimeout(connectBotSocket, 10000);
   });
+}
+
+// Attach one channel's event subscriptions to the current shared session.
+// Call this for a newly-joined channel, or in bulk on (re)connect for every saved channel.
+async function subscribeChannel(channelId) {
+  if (!botSocket.sessionId) return false;
+  const chatOk = await createSubscriptions(channelId, BOT_TOKEN, botSocket.sessionId);
+  subscribedChannels[channelId] = chatOk;
+  await startTimedMessages(channelId, BOT_TOKEN);
+  await getSettings(channelId);
+  await supabase.from('channels').update({ connected: chatOk, last_seen: new Date().toISOString() }).eq('id', channelId);
+  return chatOk;
+}
+
+async function unsubscribeChannel(channelId) {
+  if (botSocket.sessionId) await deleteSubscriptions(channelId, BOT_TOKEN, botSocket.sessionId);
+  delete subscribedChannels[channelId];
+}
+
+async function resubscribeAllChannels(sessionId) {
+  // Bot's own channel first (listens for !join / !leave)
+  await subscribeChannel(BOT_CHANNEL_ID);
+
+  const { data: saved, error } = await supabase
+    .from('channels')
+    .select('id')
+    .not('token', 'is', null)
+    .neq('id', BOT_CHANNEL_ID);
+
+  if (error) { console.error('[BOT] Supabase resubscribe error:', error.message); return; }
+  if (!saved?.length) { console.log('[BOT] No streamer channels yet — waiting for !join'); return; }
+
+  console.log(`[BOT] Resubscribing ${saved.length} streamer channel(s)...`);
+  for (const ch of saved) {
+    await subscribeChannel(ch.id);
+  }
 }
 
 // ── BOOT ──
 async function bootChannels() {
-  // 1 — Always connect bot's own channel to listen for !join / !leave
-  console.log(`[BOT] Connecting own channel (${BOT_CHANNEL_ID.slice(0,8)}) for !join listener...`);
-  connectChannel(BOT_CHANNEL_ID, BOT_TOKEN);
+  connectBotSocket();
 
-  // 2 — Reconnect all streamer channels saved in Supabase
-  console.log('[BOT] Loading saved streamer channels...');
-  const { data: saved, error } = await supabase
-    .from('channels')
-    .select('id, token')
-    .not('token', 'is', null)
-    .neq('id', BOT_CHANNEL_ID); // skip own channel, already connected above
-
-  if (error) { console.error('[BOT] Supabase boot error:', error.message); return; }
-  if (!saved?.length) { console.log('[BOT] No streamer channels yet — waiting for !join'); return; }
-
-  console.log(`[BOT] Reconnecting ${saved.length} streamer channel(s)...`);
-  for (const ch of saved) {
-    connectChannel(ch.id, BOT_TOKEN); // always use bot token
-  }
-
-  // 3 — Resolve bot username from profile
+  // Resolve bot username from profile
   try {
     const res  = await fetch(`${API}/users/profile`, { headers: blazeHeaders(BOT_TOKEN) });
     const data = await res.json();
@@ -1459,8 +1505,8 @@ app.post('/api/connect', async (req, res) => {
     last_seen: new Date().toISOString()
   }, { onConflict: 'id' });
 
-  connectChannel(channelId, token);
-  res.json({ ok: true, message: 'Channel connected and saved!' });
+  const chatOk = await subscribeChannel(channelId);
+  res.json({ ok: chatOk, message: chatOk ? 'Channel connected and saved!' : 'Saved, but chat subscription failed — check logs.' });
 });
 
 // State for dashboard polling
@@ -1541,10 +1587,11 @@ app.get('/api/debug', (req, res) => {
     gemini_set:               !!(process.env.GEMINI_API_KEY),
     bot_channel_id:           BOT_CHANNEL_ID,
     bot_username:             BOT_USERNAME,
-    sockets: Object.entries(sockets).map(([id, s]) => ({
+    socket_connected:         botSocket.connected,
+    socket_session_id:        botSocket.sessionId?.slice(0,12) || 'none',
+    channels: Object.entries(subscribedChannels).map(([id, chatOk]) => ({
       channelId: id,
-      connected: s.connected,
-      sessionId: s.sessionId?.slice(0,12) || 'none'
+      chatSubscribed: chatOk
     })),
     uptime: Math.round((Date.now() - startedAt) / 1000)
   });
