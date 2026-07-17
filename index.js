@@ -1560,6 +1560,26 @@ app.post('/api/chat', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Dashboard "Remove Bot" button — same cleanup as the !leave chat command,
+// minus the goodbye message (dashboard already confirms removal in the UI).
+app.post('/api/disconnect', async (req, res) => {
+  const { channelId } = req.body;
+  if (!channelId) return res.status(400).json({ error: 'channelId required' });
+  if (channelId === BOT_CHANNEL_ID) return res.status(400).json({ error: 'Cannot remove bot from its own channel' });
+
+  await unsubscribeChannel(channelId);
+
+  if (timedMsgTimers[channelId]) {
+    timedMsgTimers[channelId].forEach(t => clearInterval(t));
+    delete timedMsgTimers[channelId];
+  }
+
+  await supabase.from('channels').delete().eq('id', channelId);
+  delete settingsCache[channelId];
+
+  res.json({ ok: true, message: 'Bot removed from channel.' });
+});
+
 // Reset loyalty for a channel
 app.post('/api/reset', async (req, res) => {
   const { channelId } = req.body;
