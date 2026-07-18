@@ -46,7 +46,7 @@ const API           = 'https://api.blaze.stream/v1';
 const startedAt     = Date.now();
 
 // ── BOT ACCOUNT (single identity across all channels) ──
-const BOT_SESSION_TOKEN  = process.env.BLAZE_SESSION_TOKEN     || '';
+let   BOT_SESSION_TOKEN  = process.env.BLAZE_SESSION_TOKEN     || '';
 let   BOT_API_TOKEN      = process.env.BLAZE_BOT_TOKEN         || '';
 let   BOT_REFRESH_TOKEN  = process.env.BLAZE_BOT_REFRESH_TOKEN || '';
 let   BOT_TOKEN          = BOT_API_TOKEN;
@@ -129,20 +129,25 @@ const supabase = createClient(
 // Blaze rotates the bot's refresh token on every use — the OLD one is invalidated the moment a
 // new one is issued. Render's env var is static, so after the FIRST refresh cycle it's already
 // stale; any restart after that reads the dead token and fails with "invalid refresh token".
-// Persisting the latest rotated pair to Supabase (and reading from there first on boot) fixes
-// that permanently. Requires a one-time table:
+// The session token (used only for the follow-on-!join call) doesn't auto-rotate via API at all —
+// it's a raw browser cookie that has to be pasted in manually — but it still needs to survive
+// restarts without reverting to whatever's frozen in the env var. All three live in Supabase now.
+// One-time table:
 //   create table bot_config (
 //     id text primary key,
-//     access_token text, refresh_token text,
+//     access_token text, refresh_token text, session_token text,
 //     updated_at timestamptz default now()
 //   );
+// If you already created the table before this session_token column existed, run:
+//   alter table bot_config add column if not exists session_token text;
 async function loadBotTokens() {
   try {
-    const { data, error } = await supabase.from('bot_config').select('access_token, refresh_token').eq('id', 'bot').single();
+    const { data, error } = await supabase.from('bot_config').select('access_token, refresh_token, session_token').eq('id', 'bot').single();
     if (error || !data) { console.log('[BOT] No saved tokens in Supabase yet — using env vars'); return; }
     if (data.access_token)  { BOT_API_TOKEN = data.access_token; BOT_TOKEN = data.access_token; }
     if (data.refresh_token) BOT_REFRESH_TOKEN = data.refresh_token;
-    console.log('[BOT] Loaded latest rotated tokens from Supabase');
+    if (data.session_token) BOT_SESSION_TOKEN = data.session_token;
+    console.log('[BOT] Loaded latest tokens from Supabase');
   } catch (e) {
     console.error('[BOT] loadBotTokens error (falling back to env vars):', e.message);
   }
@@ -151,7 +156,8 @@ async function loadBotTokens() {
 async function saveBotTokens() {
   try {
     await supabase.from('bot_config').upsert({
-      id: 'bot', access_token: BOT_API_TOKEN, refresh_token: BOT_REFRESH_TOKEN, updated_at: new Date().toISOString()
+      id: 'bot', access_token: BOT_API_TOKEN, refresh_token: BOT_REFRESH_TOKEN,
+      session_token: BOT_SESSION_TOKEN, updated_at: new Date().toISOString()
     }, { onConflict: 'id' });
   } catch (e) {
     console.error('[BOT] saveBotTokens error:', e.message);
@@ -396,8 +402,8 @@ async function sendChat(channelId, token, message) {
 // Session tokens DO rotate when the bot account logs out or sessions expire.
 // If follow stops working, get a fresh token from browser cookies while logged in as blazeguy.
 async function botFollowChannel(targetChannelId) {
-  // Session token rotates — always use latest from env, fallback to OAuth token
-  const sessionToken = process.env.BLAZE_SESSION_TOKEN || BOT_API_TOKEN;
+  // Session token rotates — always use the latest loaded value (Supabase-backed), fallback to OAuth token
+  const sessionToken = BOT_SESSION_TOKEN || BOT_API_TOKEN;
   try {
     const res = await fetch(`https://blaze.stream/bapi/channels/${targetChannelId}/follow`, {
       method: 'POST',
@@ -1689,6 +1695,25 @@ app.get('/api/channels', async (req, res) => {
 });
 
 // Debug — see all connected sockets and bot status
+// Update the bot's tokens directly (no Render redeploy needed) — gated by the same
+// CLIENT_SECRET used for /api/debug. Useful for the session token specifically, since
+// it has no API-based refresh and has to be pasted in by hand periodically.
+app.post('/api/admin/tokens', async (req, res) => {
+  if (req.query.key !== CLIENT_SECRET) return res.status(404).end();
+  const { accessToken, refreshToken, sessionToken } = req.body || {};
+  if (!accessToken && !refreshToken && !sessionToken) {
+    return res.status(400).json({ error: 'Provide at least one of accessToken, refreshToken, sessionToken' });
+  }
+  if (accessToken)  { BOT_API_TOKEN = accessToken; BOT_TOKEN = accessToken; }
+  if (refreshToken) BOT_REFRESH_TOKEN = refreshToken;
+  if (sessionToken) BOT_SESSION_TOKEN = sessionToken;
+  await saveBotTokens();
+  res.json({
+    ok: true,
+    updated: { accessToken: !!accessToken, refreshToken: !!refreshToken, sessionToken: !!sessionToken }
+  });
+});
+
 app.get('/api/debug', (req, res) => {
   // Reuses the existing CLIENT_SECRET env var as a gate — no new secret to manage.
   // Public before this had no cost to exploit but no reason to leave open either.
