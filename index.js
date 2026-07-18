@@ -78,15 +78,18 @@ async function refreshBotToken() {
       // Single shared socket/token model — every call site reads BOT_TOKEN/BOT_API_TOKEN live,
       // so nothing per-channel needs to be patched here.
       console.log(`[BOT] ✅ Token refreshed! New length: ${BOT_API_TOKEN.length}`);
+      lastRefreshFailure = null;
       tokenRefreshing = false;
       return true;
     } else {
       console.error('[BOT] Token refresh failed:', JSON.stringify(data));
+      lastRefreshFailure = { at: new Date().toISOString(), message: data.message || 'refresh failed' };
       tokenRefreshing = false;
       return false;
     }
   } catch (e) {
     console.error('[BOT] Token refresh error:', e.message);
+    lastRefreshFailure = { at: new Date().toISOString(), message: e.message };
     tokenRefreshing = false;
     return false;
   }
@@ -206,6 +209,59 @@ async function updateSettings(channelId, patch) {
 }
 
 // ── HELPERS ──
+// Verify the caller's Bearer access token actually belongs to the channelId they're
+// acting on, before letting them run owner-only dashboard actions (chat commands,
+// reset, disconnect, connect). Without this, anyone who knows a channelId (visible
+// in overlay URLs, /api/state, etc.) could act as that streamer's owner.
+async function verifyChannelOwner(req, res, next) {
+  const channelId = req.body?.channelId;
+  const token     = req.headers.authorization?.replace('Bearer ', '') || req.body?.token;
+  if (!channelId) return res.status(400).json({ error: 'channelId required' });
+  if (!token)     return res.status(401).json({ error: 'Authorization: Bearer <accessToken> required' });
+
+  try {
+    const r    = await fetch(`${API}/users/profile`, {
+      headers: { 'client-id': CLIENT_ID, 'authorization': `Bearer ${token}`, 'content-type': 'application/json' }
+    });
+    const data = await r.json();
+    const uid  = data?.data?.id || data?.id;
+    if (!uid || uid !== channelId) {
+      return res.status(403).json({ error: 'Token does not match channelId' });
+    }
+    next();
+  } catch (e) {
+    console.error('[AUTH] verifyChannelOwner error:', e.message);
+    res.status(500).json({ error: 'Could not verify ownership' });
+  }
+}
+
+// Simple in-memory sliding-window rate limiter for public write routes.
+// Not distributed (fine for a single Render instance) — resets on restart, which is acceptable.
+const rateLimitHits = {};
+function rateLimit(maxRequests, windowMs) {
+  return (req, res, next) => {
+    const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const now = Date.now();
+    const hits = (rateLimitHits[key] || []).filter(t => now - t < windowMs);
+    if (hits.length >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests — slow down.' });
+    }
+    hits.push(now);
+    rateLimitHits[key] = hits;
+    next();
+  };
+}
+// Periodically prune old IPs so this doesn't grow forever
+setInterval(() => {
+  const now = Date.now();
+  for (const key of Object.keys(rateLimitHits)) {
+    rateLimitHits[key] = rateLimitHits[key].filter(t => now - t < 5 * 60 * 1000);
+    if (!rateLimitHits[key].length) delete rateLimitHits[key];
+  }
+}, 5 * 60 * 1000);
+
+// Track token-refresh health so it's visible in /api/debug instead of only in logs
+let lastRefreshFailure = null; // { at, message } | null
 function getMilestone(score) {
   let m = MILESTONES[0];
   for (const ms of MILESTONES) { if (score >= ms.pts) m = ms; }
@@ -1403,7 +1459,7 @@ async function bootChannels() {
 }
 
 // ── OAUTH PROXY — keeps client secret off the frontend ──
-app.post('/oauth/auth-url', async (req, res) => {
+app.post('/oauth/auth-url', rateLimit(20, 60 * 1000), async (req, res) => {
   const { redirectUri } = req.body;
   if (!redirectUri) return res.status(400).json({ error: 'redirectUri required' });
   if (!CLIENT_SECRET) return res.status(500).json({ error: 'BLAZE_CLIENT_SECRET not set in Render env vars' });
@@ -1427,7 +1483,7 @@ app.post('/oauth/auth-url', async (req, res) => {
   }
 });
 
-app.post('/oauth/token', async (req, res) => {
+app.post('/oauth/token', rateLimit(20, 60 * 1000), async (req, res) => {
   const { code, codeVerifier, redirectUri } = req.body;
   if (!code) return res.status(400).json({ error: 'code required' });
   if (!CLIENT_SECRET) return res.status(500).json({ error: 'BLAZE_CLIENT_SECRET not set in Render env vars' });
@@ -1455,7 +1511,7 @@ app.post('/oauth/token', async (req, res) => {
   }
 });
 
-app.post('/oauth/refresh', async (req, res) => {
+app.post('/oauth/refresh', rateLimit(20, 60 * 1000), async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ error: 'refreshToken required' });
   if (!CLIENT_SECRET) return res.status(500).json({ error: 'BLAZE_CLIENT_SECRET not set in Render env vars' });
@@ -1495,7 +1551,7 @@ app.get('/health', (req, res) => {
 });
 
 // Dashboard calls this after OAuth — saves token to Supabase, connects socket
-app.post('/api/connect', async (req, res) => {
+app.post('/api/connect', rateLimit(10, 60 * 1000), verifyChannelOwner, async (req, res) => {
   const { token, channelId, username, displayName, avatarUrl } = req.body;
   if (!token || !channelId) return res.status(400).json({ error: 'token and channelId required' });
 
@@ -1542,7 +1598,7 @@ app.get('/api/state', async (req, res) => {
 
 // Send bot COMMANDS from dashboard — only ! commands allowed, no free chat
 // This prevents the dashboard from being used as a chat client
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', rateLimit(30, 60 * 1000), verifyChannelOwner, async (req, res) => {
   const { channelId, message } = req.body;
   if (!channelId || !message) return res.status(400).json({ error: 'channelId and message required' });
 
@@ -1551,8 +1607,9 @@ app.post('/api/chat', async (req, res) => {
     return res.status(403).json({ error: 'Only bot commands (starting with !) can be sent from the dashboard.' });
   }
 
-  const token = sockets[channelId]?.token || await getChannelToken(channelId);
-  if (!token) return res.status(404).json({ error: 'Channel not connected' });
+  // verifyChannelOwner already confirmed the caller's token belongs to this channelId;
+  // still need the channel's stored token for posting as the bot on their behalf.
+  const token = sockets[channelId]?.token || await getChannelToken(channelId) || BOT_TOKEN;
 
   // Run through bot command handler as if the owner typed it
   const fakeOwnerSender = { id: channelId, username: 'dashboard', displayName: 'Dashboard', avatarUrl: '', isSubscriber: false, isFollower: false };
@@ -1562,7 +1619,7 @@ app.post('/api/chat', async (req, res) => {
 
 // Dashboard "Remove Bot" button — same cleanup as the !leave chat command,
 // minus the goodbye message (dashboard already confirms removal in the UI).
-app.post('/api/disconnect', async (req, res) => {
+app.post('/api/disconnect', rateLimit(10, 60 * 1000), verifyChannelOwner, async (req, res) => {
   const { channelId } = req.body;
   if (!channelId) return res.status(400).json({ error: 'channelId required' });
   if (channelId === BOT_CHANNEL_ID) return res.status(400).json({ error: 'Cannot remove bot from its own channel' });
@@ -1581,7 +1638,7 @@ app.post('/api/disconnect', async (req, res) => {
 });
 
 // Reset loyalty for a channel
-app.post('/api/reset', async (req, res) => {
+app.post('/api/reset', rateLimit(5, 60 * 1000), verifyChannelOwner, async (req, res) => {
   const { channelId } = req.body;
   if (!channelId) return res.status(400).json({ error: 'channelId required' });
   await supabase.from('loyalty').delete().eq('channel_id', channelId);
@@ -1601,6 +1658,7 @@ app.get('/api/debug', (req, res) => {
     bot_api_token_set:        !!BOT_API_TOKEN,
     bot_api_token_length:     BOT_API_TOKEN?.length || 0,
     bot_refresh_token_set:    !!BOT_REFRESH_TOKEN,
+    last_refresh_failure:     lastRefreshFailure,
     bot_session_token_set:    !!BOT_SESSION_TOKEN,
     bot_session_token_length: BOT_SESSION_TOKEN?.length || 0,
     client_secret_set:        !!CLIENT_SECRET,
