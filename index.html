@@ -802,6 +802,14 @@ let accessToken = '';
 let channelId   = '';
 let pollTimer   = null;
 
+// Attaches the logged-in streamer's access token so the backend can verify they
+// actually own the channelId they're acting on (chat commands, disconnect, reset, connect).
+function authFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`;
+  return fetch(url, { ...opts, headers });
+}
+
 // ── OAUTH — proxied through backend so client secret never touches frontend ──
 async function startOAuth() {
   try {
@@ -878,7 +886,7 @@ async function checkBotStatus() {
 
 async function connectToBot() {
   try {
-    const res  = await fetch(`${BOT_URL}/api/connect`, {
+    const res  = await authFetch(`${BOT_URL}/api/connect`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ token: accessToken, channelId })
     });
@@ -994,7 +1002,7 @@ async function sendBotMsg() {
   if (!msg.startsWith('!')) { toast('⚠ Only bot commands allowed here — start with !'); return; }
   input.value = '';
   try {
-    const res  = await fetch(`${BOT_URL}/api/chat`, {
+    const res  = await authFetch(`${BOT_URL}/api/chat`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ channelId, message: msg })
     });
@@ -1012,7 +1020,7 @@ async function sendBotMsg() {
 }
 
 async function postLeaderboard() {
-  const res  = await fetch(`${BOT_URL}/api/chat`, {
+  const res  = await authFetch(`${BOT_URL}/api/chat`, {
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ channelId, message: '!leaderboard' })
   });
@@ -1026,7 +1034,7 @@ async function addShopItem() {
   const cost  = parseInt(document.getElementById('shop-cost').value);
   const stock = parseInt(document.getElementById('shop-stock').value);
   if (!slug||!name||isNaN(cost)) { toast('Fill in all shop fields'); return; }
-  await fetch(`${BOT_URL}/api/chat`, {
+  await authFetch(`${BOT_URL}/api/chat`, {
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ channelId, message: `!additem ${slug} ${name} ${cost}` })
   });
@@ -1067,7 +1075,7 @@ function toggleSetting(type, el) {
   toast(`${type} ${on?'enabled':'disabled'}`);
 }
 async function botCmd(message) {
-  await fetch(`${BOT_URL}/api/chat`, {
+  await authFetch(`${BOT_URL}/api/chat`, {
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ channelId, message })
   });
@@ -1076,7 +1084,7 @@ async function botCmd(message) {
 // ── LEAVE BOT ──
 async function leaveBot() {
   if (!confirm('Remove blazeguy from your channel? Your loyalty data is kept.')) return;
-  await fetch(`${BOT_URL}/api/disconnect`, {
+  await authFetch(`${BOT_URL}/api/disconnect`, {
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ channelId })
   });
@@ -1185,7 +1193,7 @@ async function sendMobBotMsg() {
   if (!msg.startsWith('!')) { toast('⚠ Only bot commands — start with !'); return; }
   input.value = '';
   try {
-    await fetch(`${BOT_URL}/api/chat`, {
+    await authFetch(`${BOT_URL}/api/chat`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ channelId, message: msg })
     });
@@ -1203,7 +1211,7 @@ async function sendMobBotMsg() {
 function quickCmd(cmd) {
   closeMobDrawers();
   setTimeout(async () => {
-    await fetch(`${BOT_URL}/api/chat`, {
+    await authFetch(`${BOT_URL}/api/chat`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ channelId, message: cmd })
     });
