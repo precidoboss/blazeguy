@@ -80,6 +80,7 @@ async function refreshBotToken() {
       console.log(`[BOT] ✅ Token refreshed! New length: ${BOT_API_TOKEN.length}`);
       lastRefreshFailure = null;
       tokenRefreshing = false;
+      await saveBotTokens(); // persist the ROTATED tokens — env var alone goes stale after one refresh cycle
       return true;
     } else {
       console.error('[BOT] Token refresh failed:', JSON.stringify(data));
@@ -123,6 +124,39 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+// ── DURABLE TOKEN STORAGE ──
+// Blaze rotates the bot's refresh token on every use — the OLD one is invalidated the moment a
+// new one is issued. Render's env var is static, so after the FIRST refresh cycle it's already
+// stale; any restart after that reads the dead token and fails with "invalid refresh token".
+// Persisting the latest rotated pair to Supabase (and reading from there first on boot) fixes
+// that permanently. Requires a one-time table:
+//   create table bot_config (
+//     id text primary key,
+//     access_token text, refresh_token text,
+//     updated_at timestamptz default now()
+//   );
+async function loadBotTokens() {
+  try {
+    const { data, error } = await supabase.from('bot_config').select('access_token, refresh_token').eq('id', 'bot').single();
+    if (error || !data) { console.log('[BOT] No saved tokens in Supabase yet — using env vars'); return; }
+    if (data.access_token)  { BOT_API_TOKEN = data.access_token; BOT_TOKEN = data.access_token; }
+    if (data.refresh_token) BOT_REFRESH_TOKEN = data.refresh_token;
+    console.log('[BOT] Loaded latest rotated tokens from Supabase');
+  } catch (e) {
+    console.error('[BOT] loadBotTokens error (falling back to env vars):', e.message);
+  }
+}
+
+async function saveBotTokens() {
+  try {
+    await supabase.from('bot_config').upsert({
+      id: 'bot', access_token: BOT_API_TOKEN, refresh_token: BOT_REFRESH_TOKEN, updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.error('[BOT] saveBotTokens error:', e.message);
+  }
+}
 
 // ── SCORING ──
 const SCORES     = { msg: 1, follow: 10, sub: 50, gift: 30, vote: 5 };
@@ -1447,6 +1481,8 @@ async function resubscribeAllChannels(sessionId) {
 
 // ── BOOT ──
 async function bootChannels() {
+  await loadBotTokens(); // Supabase tokens (if any) win over the possibly-stale env vars
+  await saveBotTokens(); // seed/refresh the stored copy immediately (covers first-ever boot and manual env var updates)
   connectBotSocket();
 
   // Resolve bot username from profile
@@ -1654,6 +1690,9 @@ app.get('/api/channels', async (req, res) => {
 
 // Debug — see all connected sockets and bot status
 app.get('/api/debug', (req, res) => {
+  // Reuses the existing CLIENT_SECRET env var as a gate — no new secret to manage.
+  // Public before this had no cost to exploit but no reason to leave open either.
+  if (req.query.key !== CLIENT_SECRET) return res.status(404).end();
   res.json({
     bot_api_token_set:        !!BOT_API_TOKEN,
     bot_api_token_length:     BOT_API_TOKEN?.length || 0,
