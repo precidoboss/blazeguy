@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>blazeguy — Viewers & Purchases</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#080B10;--surface:#0E1118;--card:#131720;--border:#1E2433;--border2:#252D3D;
+  --blaze:#F0B90B;--blaze2:#FFD234;--blazedim:rgba(240,185,11,0.12);
+  --text:#E8EAF0;--muted:#5A6380;--muted2:#8892AA;
+  --green:#22D47A;--greendim:rgba(34,212,122,0.1);
+  --purple:#9B6CF5;--purpledim:rgba(155,108,245,0.1);
+  --blue:#4C8EF5;
+}
+html,body{min-height:100%;font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:10;}
+.logo{font-size:18px;font-weight:700;color:var(--blaze);}
+
+.wrap{max-width:900px;margin:0 auto;padding:24px 20px 60px;}
+.tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;}
+.tab{flex:1;text-align:center;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;}
+.tab.active{background:var(--blazedim);color:var(--blaze);}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
+.card-title{font-size:16px;font-weight:700;margin-bottom:4px;}
+.card-sub{font-size:12px;color:var(--muted2);margin-bottom:16px;}
+
+.search-row{display:flex;gap:8px;margin-bottom:16px;}
+.search-row input{flex:1;background:var(--bg);border:1px solid var(--border2);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;font-family:inherit;}
+.search-row input:focus{outline:1px solid var(--blaze);}
+
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:hover td{background:rgba(255,255,255,.02);}
+.user-cell{display:flex;align-items:center;gap:8px;}
+.avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;background:var(--border2);flex-shrink:0;}
+.uname{font-weight:600;font-size:12px;}
+.badge{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;text-transform:uppercase;margin-left:4px;}
+.badge-sub{background:var(--purpledim);color:var(--purple);}
+.badge-fol{background:rgba(76,142,245,.1);color:var(--blue);}
+.score{color:var(--blaze);font-weight:700;font-family:'JetBrains Mono',monospace;}
+.cost{color:var(--green);font-weight:700;font-family:'JetBrains Mono',monospace;}
+.muted{color:var(--muted2);}
+.mono{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);}
+
+.empty{text-align:center;padding:40px 20px;color:var(--muted);}
+.load-more{width:100%;padding:10px;background:var(--surface);border:1px solid var(--border2);color:var(--muted2);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;margin-top:10px;}
+.load-more:hover{border-color:var(--blaze);color:var(--blaze);}
+
+.needs-id{text-align:center;padding:60px 20px;color:var(--muted2);}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="logo">⚡ blazeguy — Viewers & Purchases</div></div>
+
+<div class="wrap" id="app">
+  <div class="needs-id" id="needs-id">
+    Add <code>?channel=YOUR_CHANNEL_ID</code> to this page's URL to view your data.<br>
+    You can copy this link with the channel ID already filled in from your dashboard Settings tab.
+  </div>
+
+  <div id="content" style="display:none;">
+    <div class="tabs">
+      <div class="tab active" id="tab-viewers" onclick="switchTab('viewers')">👥 Viewers</div>
+      <div class="tab" id="tab-purchases" onclick="switchTab('purchases')">🛍 Purchases</div>
+    </div>
+
+    <!-- VIEWERS -->
+    <div id="pane-viewers">
+      <div class="card">
+        <div class="card-title">Viewer Directory</div>
+        <div class="card-sub">Every viewer tracked, not just the top 20 — search by name</div>
+        <div class="search-row">
+          <input id="viewer-search" placeholder="Search username..." oninput="debouncedSearch()">
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr>
+              <th>Viewer</th><th>Score</th><th>Msgs</th><th>Follows</th><th>Subs</th><th>Gifts</th><th>Votes</th><th>Milestone</th><th>Last Seen</th>
+            </tr></thead>
+            <tbody id="viewers-tbody"></tbody>
+          </table>
+        </div>
+        <div id="viewers-empty" class="empty" style="display:none;">No viewers found</div>
+        <button class="load-more" id="viewers-more" onclick="loadViewers(false)" style="display:none;">Load more</button>
+      </div>
+    </div>
+
+    <!-- PURCHASES -->
+    <div id="pane-purchases" style="display:none;">
+      <div class="card">
+        <div class="card-title">Shop Purchase History</div>
+        <div class="card-sub">Every redemption from your loyalty shop</div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Viewer</th><th>Item</th><th>Cost</th><th>When</th></tr></thead>
+            <tbody id="purchases-tbody"></tbody>
+          </table>
+        </div>
+        <div id="purchases-empty" class="empty" style="display:none;">No purchases yet</div>
+        <button class="load-more" id="purchases-more" onclick="loadPurchases(false)" style="display:none;">Load more</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BOT_URL = 'https://blazeguy.onrender.com';
+const params  = new URLSearchParams(window.location.search);
+const channelId = params.get('channel');
+
+const PAGE_SIZE = 30;
+let viewersOffset = 0, purchasesOffset = 0;
+let searchTimer = null;
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function timeAgo(iso){
+  if (!iso) return '—';
+  const s = Math.floor((Date.now() - new Date(iso).getTime())/1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60)+'m ago';
+  if (s < 86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+function avatarFallback(name){
+  const letter = (name||'?')[0].toUpperCase();
+  return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><rect fill='%231E2433' width='26' height='26' rx='13'/><text x='13' y='18' text-anchor='middle' fill='%235A6380' font-size='12'>${letter}</text></svg>`;
+}
+
+function switchTab(name){
+  document.getElementById('tab-viewers').classList.toggle('active', name==='viewers');
+  document.getElementById('tab-purchases').classList.toggle('active', name==='purchases');
+  document.getElementById('pane-viewers').style.display   = name==='viewers'   ? 'block' : 'none';
+  document.getElementById('pane-purchases').style.display = name==='purchases' ? 'block' : 'none';
+}
+
+function debouncedSearch(){
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadViewers(true), 300);
+}
+
+async function loadViewers(reset){
+  if (reset) viewersOffset = 0;
+  const search = document.getElementById('viewer-search').value.trim();
+  const res  = await fetch(`${BOT_URL}/api/viewers?channelId=${channelId}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${viewersOffset}`);
+  const data = await res.json();
+  const tbody = document.getElementById('viewers-tbody');
+  if (reset) tbody.innerHTML = '';
+
+  const rows = data.viewers || [];
+  document.getElementById('viewers-empty').style.display = (reset && !rows.length) ? 'block' : 'none';
+
+  tbody.innerHTML += rows.map(u => `
+    <tr>
+      <td><div class="user-cell">
+        <img class="avatar" src="${esc(u.avatar_url||'')}" onerror="this.src='${avatarFallback(u.display_name||u.username)}'">
+        <span class="uname">${esc(u.display_name||u.username)}</span>
+        ${u.is_subscriber ? '<span class="badge badge-sub">SUB</span>' : ''}
+        ${u.is_follower ? '<span class="badge badge-fol">FAN</span>' : ''}
+      </div></td>
+      <td class="score">${u.score||0}</td>
+      <td class="muted">${u.msgs||0}</td>
+      <td class="muted">${u.follows||0}</td>
+      <td class="muted">${u.subs||0}</td>
+      <td class="muted">${u.gifts||0}</td>
+      <td class="muted">${u.votes||0}</td>
+      <td class="muted">${esc(u.milestone||'—')}</td>
+      <td class="mono">${timeAgo(u.last_seen)}</td>
+    </tr>`).join('');
+
+  viewersOffset += rows.length;
+  document.getElementById('viewers-more').style.display = (viewersOffset < (data.total||0)) ? 'block' : 'none';
+}
+
+async function loadPurchases(reset){
+  if (reset) purchasesOffset = 0;
+  const res  = await fetch(`${BOT_URL}/api/shop-purchases?channelId=${channelId}&limit=${PAGE_SIZE}&offset=${purchasesOffset}`);
+  const data = await res.json();
+  const tbody = document.getElementById('purchases-tbody');
+  if (reset) tbody.innerHTML = '';
+
+  const rows = data.purchases || [];
+  document.getElementById('purchases-empty').style.display = (reset && !rows.length) ? 'block' : 'none';
+
+  tbody.innerHTML += rows.map(p => `
+    <tr>
+      <td class="uname">${esc(p.username)}</td>
+      <td class="muted">${esc(p.slug)}</td>
+      <td class="cost">${p.cost} pts</td>
+      <td class="mono">${timeAgo(p.created_at)}</td>
+    </tr>`).join('');
+
+  purchasesOffset += rows.length;
+  document.getElementById('purchases-more').style.display = (rows.length === PAGE_SIZE) ? 'block' : 'none';
+}
+
+if (!channelId) {
+  document.getElementById('needs-id').style.display = 'block';
+} else {
+  document.getElementById('content').style.display = 'block';
+  loadViewers(true);
+  loadPurchases(true);
+}
+</script>
+</body>
+</html>
