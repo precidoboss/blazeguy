@@ -1608,6 +1608,44 @@ app.post('/api/connect', rateLimit(10, 60 * 1000), verifyChannelOwner, async (re
 });
 
 // State for dashboard polling
+// Shop purchase history — same sensitivity level as the public leaderboard/alerts (username + what
+// they redeemed), so no auth needed, just like /api/state.
+app.get('/api/shop-purchases', async (req, res) => {
+  const { channelId, limit = 50, offset = 0 } = req.query;
+  if (!channelId) return res.status(400).json({ error: 'channelId required' });
+
+  const { data, error } = await supabase
+    .from('shop_purchases')
+    .select('*')
+    .eq('channel_id', channelId)
+    .order('created_at', { ascending: false })
+    .range(Number(offset), Number(offset) + Number(limit) - 1);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ purchases: data || [] });
+});
+
+// Full viewer directory — the dashboard leaderboard only ever shows the top 20; this lets a
+// streamer search for any viewer and see their full stats, not just score.
+app.get('/api/viewers', async (req, res) => {
+  const { channelId, search = '', limit = 50, offset = 0 } = req.query;
+  if (!channelId) return res.status(400).json({ error: 'channelId required' });
+
+  let query = supabase
+    .from('loyalty')
+    .select('*', { count: 'exact' })
+    .eq('channel_id', channelId);
+
+  if (search) query = query.or(`username.ilike.%${search}%,display_name.ilike.%${search}%`);
+
+  const { data, count, error } = await query
+    .order('score', { ascending: false })
+    .range(Number(offset), Number(offset) + Number(limit) - 1);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ viewers: data || [], total: count || 0 });
+});
+
 app.get('/api/state', async (req, res) => {
   const { channelId } = req.query;
   if (!channelId) return res.status(400).json({ error: 'channelId required' });
