@@ -687,6 +687,16 @@ html,body{height:100%;font-family:'Space Grotesk',sans-serif;background:var(--bg
             </div>
           </div>
 
+          <div style="margin-top:24px;">
+            <div class="lb-title" style="font-size:15px;margin-bottom:4px;">👥 Viewers & Purchases</div>
+            <div class="lb-sub" style="margin-bottom:12px;">Full viewer directory (not just top 20) and shop purchase history</div>
+            <div id="viewers-url-box" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--blaze);word-break:break-all;"></div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button class="btn btn-sm" onclick="copyViewersUrl()">📋 Copy URL</button>
+              <a id="viewers-preview-link" href="#" target="_blank" class="btn-ghost" style="padding:5px 10px;font-size:11px;border-radius:6px;text-decoration:none;">👁 Open</a>
+            </div>
+          </div>
+
           <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);">
             <button class="leave-btn" onclick="leaveBot()">⚠ Remove blazeguy from Channel</button>
           </div>
@@ -901,6 +911,7 @@ function showDashboard() {
   document.getElementById('dash-view').style.display = 'block';
   initMobileUI();
   updateOverlayUrl();
+  updateViewersUrl();
 }
 
 function showHero() {
@@ -1258,6 +1269,20 @@ function copyOverlayUrl() {
   if (!channelId) { toast('Connect first', true); return; }
   const url = `${window.location.origin}/overlay.html?channel=${channelId}`;
   navigator.clipboard.writeText(url).then(() => toast('✅ OBS URL copied!'));
+}
+
+function updateViewersUrl() {
+  if (!channelId) return;
+  const url  = `${window.location.origin}/viewers.html?channel=${channelId}`;
+  const box  = document.getElementById('viewers-url-box');
+  const link = document.getElementById('viewers-preview-link');
+  if (box)  box.textContent = url;
+  if (link) link.href = url;
+}
+function copyViewersUrl() {
+  if (!channelId) { toast('Connect first', true); return; }
+  const url = `${window.location.origin}/viewers.html?channel=${channelId}`;
+  navigator.clipboard.writeText(url).then(() => toast('✅ Viewers URL copied!'));
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
